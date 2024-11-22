@@ -60,6 +60,12 @@ pub mod pallet {
 
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
+		// Offchain worker that triggers the extrinsic submitting a price to the
+		// NodePrices storage
+		fn offchain_worker(_n: BlockNumberFor<T>) {
+			log::info!("Starting offchain worker to query price");
+		}
+
         fn on_finalize(_n: BlockNumberFor<T>) {
             // Calculate and store average price
             let (sum, count) = NodesPrices::<T>::iter_values()
