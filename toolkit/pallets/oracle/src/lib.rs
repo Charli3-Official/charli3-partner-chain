@@ -52,6 +52,16 @@ pub mod pallet {
         type AuthorityId: AppCrypto<Self::Public, Self::Signature>;
     }
 
+    /// Oracle configuration
+    #[pallet::storage]
+    pub type MinNodesForTrustedAggregation<T> = StorageValue<_, u32>;
+
+    #[pallet::storage]
+    pub type FeedAge<T: Config> = StorageValue<_, BlockNumberFor<T>>; // min acceptable age?
+
+    #[pallet::storage]
+    pub type OutliersRange<T> = StorageValue<_, u32>;
+
     /// NodesPrices store latest price for each node
     /// about Identity hasher https://docs.substrate.io/build/runtime-storage/#common-substrate-hashers
     #[pallet::storage]
