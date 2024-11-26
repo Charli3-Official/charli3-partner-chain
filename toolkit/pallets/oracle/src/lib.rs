@@ -2,18 +2,54 @@
 
 pub use pallet::*;
 
+use sp_core::crypto::KeyTypeId;
+
+pub const KEY_TYPE: KeyTypeId = KeyTypeId(*b"orac");
+
+pub mod crypto {
+    use super::KEY_TYPE;
+    use sp_core::sr25519::Signature as Sr25519Signature;
+    use sp_runtime::{
+        app_crypto::{app_crypto, sr25519},
+        traits::Verify,
+        MultiSignature, MultiSigner,
+    };
+    app_crypto!(sr25519, KEY_TYPE);
+
+    pub struct OracleAuthId;
+
+    impl frame_system::offchain::AppCrypto<MultiSigner, MultiSignature> for OracleAuthId {
+        type RuntimeAppPublic = Public;
+        type GenericSignature = sp_core::sr25519::Signature;
+        type GenericPublic = sp_core::sr25519::Public;
+    }
+
+    impl frame_system::offchain::AppCrypto<<Sr25519Signature as Verify>::Signer, Sr25519Signature>
+        for OracleAuthId
+    {
+        type RuntimeAppPublic = Public;
+        type GenericSignature = sp_core::sr25519::Signature;
+        type GenericPublic = sp_core::sr25519::Public;
+    }
+}
+
 #[frame_support::pallet]
 pub mod pallet {
     use super::*;
     use frame_support::pallet_prelude::*;
-    use frame_system::pallet_prelude::*;
+    use frame_system::{
+        offchain::{AppCrypto, CreateSignedTransaction, SendSignedTransaction, Signer},
+        pallet_prelude::*,
+    };
+    use scale_info::prelude::vec;
 
     #[pallet::pallet]
     pub struct Pallet<T>(_);
 
     #[pallet::config]
-    pub trait Config: frame_system::Config {
+    pub trait Config: frame_system::Config + CreateSignedTransaction<Call<Self>> {
         type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
+        type AuthorityId: AppCrypto<Self::Public, Self::Signature>;
     }
 
     /// NodesPrices store latest price for each node
@@ -60,11 +96,31 @@ pub mod pallet {
 
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
-		// Offchain worker that triggers the extrinsic submitting a price to the
-		// NodePrices storage
-		fn offchain_worker(_n: BlockNumberFor<T>) {
-			log::info!("Starting offchain worker to query price");
-		}
+        // Offchain worker that triggers the extrinsic submitting a price to the
+        // NodePrices storage
+        fn offchain_worker(_n: BlockNumberFor<T>) {
+            log::info!("Starting offchain worker to query price");
+            let mut acc_list = Signer::<T, T::AuthorityId>::keystore_accounts();
+            match acc_list.next() {
+                Some(signer_account) if acc_list.next().is_none() => {
+                    let signer = Signer::<T, T::AuthorityId>::all_accounts()
+                        .with_filter(vec![signer_account.clone().public]);
+                    if signer.can_sign() {
+                        let result = signer.send_single_signed_transaction(
+                            &signer_account,
+                            Call::store_price { price: 127 },
+                        );
+                        if result.is_some_and(|res| res.is_ok()) {
+                            log::info!("[{:?}]: submit transaction success.", signer_account.id)
+                        } else {
+                            log::error!("[{:?}]: submit transaction failure.", signer_account.id)
+                        }
+                    }
+                }
+                Some(_accounts) => log::error!("More than one account. Expected only one"),
+                None => log::error!("No account available for oracle"),
+            }
+        }
 
         fn on_finalize(_n: BlockNumberFor<T>) {
             // Calculate and store average price
