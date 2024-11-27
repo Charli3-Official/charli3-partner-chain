@@ -1,0 +1,30 @@
+diff a/toolkit/pallets/oracle/src/lib.rs b/toolkit/pallets/oracle/src/lib.rs	(rejected hunks)
+@@ -59,7 +59,7 @@ pub mod pallet {
+     pub type MinNodesForTrustedAggregation<T> = StorageValue<_, u32>;
+ 
+     #[pallet::storage]
+-    pub type FeedAge<T: Config> = StorageValue<_, BlockNumberFor<T>>;
++    pub type FeedAge<T> = StorageValue<_, u16>;
+ 
+     #[pallet::storage]
+     pub type OutliersRange<T> = StorageValue<_, u32>;
+@@ -84,8 +84,10 @@ pub mod pallet {
+     #[pallet::genesis_config]
+     pub struct GenesisConfig<T: Config> {
+         pub min_nodes_for_trusted_aggregation: u32,
+-        pub feed_age: BlockNumberFor<T>,
++        pub feed_age: u16,
+         pub outliers_range: u32,
++        // Ties `T` to `GenesisConfig` because is needed for `impl<T: Config> BuildGenesisConfig ...`
++        _marker: PhantomData<T>,
+     }
+ 
+     impl<T: Config> Default for GenesisConfig<T> {
+@@ -94,6 +96,7 @@ pub mod pallet {
+                 min_nodes_for_trusted_aggregation: Default::default(),
+                 feed_age: Default::default(),
+                 outliers_range: Default::default(),
++                _marker: Default::default(),
+             }
+         }
+     }
