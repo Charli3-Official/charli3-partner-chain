@@ -42,6 +42,8 @@ pub mod pallet {
         pallet_prelude::*,
     };
     use scale_info::prelude::vec;
+    use frame_support::traits::BuildGenesisConfig;
+    use frame_system::pallet_prelude::*;
 
     #[pallet::pallet]
     pub struct Pallet<T>(_);
@@ -57,7 +59,7 @@ pub mod pallet {
     pub type MinNodesForTrustedAggregation<T> = StorageValue<_, u32>;
 
     #[pallet::storage]
-    pub type FeedAge<T: Config> = StorageValue<_, BlockNumberFor<T>>; // min acceptable age?
+    pub type FeedAge<T: Config> = StorageValue<_, BlockNumberFor<T>>;
 
     #[pallet::storage]
     pub type OutliersRange<T> = StorageValue<_, u32>;
@@ -77,6 +79,35 @@ pub mod pallet {
     #[pallet::storage]
     pub type Price<T> = StorageValue<_, u32>;
 
+    /// oracle genesis config definition and associated macros
+    // see https://docs.substrate.io/reference/how-to-guides/basics/configure-genesis-state/
+    #[pallet::genesis_config]
+    pub struct GenesisConfig<T: Config> {
+        pub min_nodes_for_trusted_aggregation: u32,
+        pub feed_age: BlockNumberFor<T>,
+        pub outliers_range: u32,
+    }
+
+    impl<T: Config> Default for GenesisConfig<T> {
+        fn default() -> Self {
+            Self {
+                min_nodes_for_trusted_aggregation: Default::default(),
+                feed_age: Default::default(),
+                outliers_range: Default::default(),
+            }
+        }
+    }
+
+    #[pallet::genesis_build]
+    impl<T: Config> BuildGenesisConfig for GenesisConfig<T> {
+        fn build(&self) {
+            <MinNodesForTrustedAggregation<T>>::put(&self.min_nodes_for_trusted_aggregation);
+            <FeedAge<T>>::put(&self.feed_age);
+            <OutliersRange<T>>::put(&self.outliers_range);
+        }
+    }
+
+    /// pallet events
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config> {
@@ -87,6 +118,7 @@ pub mod pallet {
         },
     }
 
+    /// pallet calls
     #[pallet::call]
     impl<T: Config> Pallet<T> {
         #[pallet::call_index(0)]
@@ -104,6 +136,7 @@ pub mod pallet {
         }
     }
 
+    /// pallet hooks
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
         // Offchain worker that triggers the extrinsic submitting a price to the
