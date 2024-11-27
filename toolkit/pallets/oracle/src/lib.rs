@@ -43,7 +43,6 @@ pub mod pallet {
     };
     use scale_info::prelude::vec;
     use frame_support::traits::BuildGenesisConfig;
-    use frame_system::pallet_prelude::*;
 
     #[pallet::pallet]
     pub struct Pallet<T>(_);
