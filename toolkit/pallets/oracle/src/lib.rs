@@ -37,12 +37,21 @@ pub mod crypto {
 pub mod pallet {
     use super::*;
     use frame_support::pallet_prelude::*;
+    use frame_support::traits::BuildGenesisConfig;
     use frame_system::{
         offchain::{AppCrypto, CreateSignedTransaction, SendSignedTransaction, Signer},
         pallet_prelude::*,
     };
     use scale_info::prelude::vec;
-    use frame_support::traits::BuildGenesisConfig;
+    use sp_runtime::offchain::{http, Duration};
+    use sp_runtime::serde::{Deserialize, Serialize};
+    use sp_runtime::sp_std::str;
+    use sp_runtime::Vec;
+
+    #[derive(Serialize, Deserialize)]
+    struct PriceResponse {
+        USD: f64,
+    }
 
     #[pallet::pallet]
     pub struct Pallet<T>(_);
@@ -135,6 +144,51 @@ pub mod pallet {
         }
     }
 
+    impl<T: Config> Pallet<T> {
+        pub fn fetch_price() -> Result<u32, http::Error> {
+            // 2 seconds timeout for not hanging the node
+            let deadline = sp_io::offchain::timestamp().add(Duration::from_millis(2_000));
+
+            let request = http::Request::get(
+                "https://min-api.cryptocompare.com/data/price?fsym=ADA&tsyms=USD",
+            );
+
+            let pending = request
+                .deadline(deadline)
+                .send()
+                .map_err(|_| http::Error::IoError)?;
+
+            let response = pending
+                .try_wait(deadline)
+                .map_err(|_| http::Error::DeadlineReached)??;
+
+            if response.code != 200 {
+                log::warn!("Unexpected status code: {}", response.code);
+                return Err(http::Error::Unknown);
+            }
+
+            let body = response.body().collect::<Vec<u8>>();
+            let body_str = str::from_utf8(&body).map_err(|_| {
+                log::warn!("Response was not valid UTF8");
+                http::Error::Unknown
+            })?;
+
+            log::info!("Got price response: {}", body_str);
+
+            // Parse the JSON response
+            let price_data = serde_json::from_str::<PriceResponse>(body_str).map_err(|e| {
+                log::warn!("Failed to parse price from response: {:?}", e);
+                http::Error::Unknown
+            })?;
+
+            // price has 3 decimals
+            let price = (price_data.USD * 1000.0) as u32;
+            log::info!("ADA price * 1000: {}", price);
+
+            Ok(price)
+        }
+    }
+
     /// pallet hooks
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
@@ -148,14 +202,31 @@ pub mod pallet {
                     let signer = Signer::<T, T::AuthorityId>::all_accounts()
                         .with_filter(vec![signer_account.clone().public]);
                     if signer.can_sign() {
-                        let result = signer.send_single_signed_transaction(
-                            &signer_account,
-                            Call::store_price { price: 127 },
-                        );
-                        if result.is_some_and(|res| res.is_ok()) {
-                            log::info!("[{:?}]: submit transaction success.", signer_account.id)
-                        } else {
-                            log::error!("[{:?}]: submit transaction failure.", signer_account.id)
+                        match Self::fetch_price() {
+                            Ok(price) => {
+                                let result = signer.send_single_signed_transaction(
+                                    &signer_account,
+                                    Call::store_price { price },
+                                );
+                                if result.is_some_and(|res| res.is_ok()) {
+                                    log::info!(
+                                        "[{:?}]: submit transaction success.",
+                                        signer_account.id
+                                    )
+                                } else {
+                                    log::error!(
+                                        "[{:?}]: submit transaction failure.",
+                                        signer_account.id
+                                    )
+                                }
+                            }
+                            Err(e) => {
+                                log::error!(
+                                    "[{:?}]: failed to fetch price: {:?}",
+                                    signer_account.id,
+                                    e
+                                );
+                            }
                         }
                     }
                 }
