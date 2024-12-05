@@ -9,7 +9,8 @@ pub trait PriceProvider {
 
 #[derive(Serialize, Deserialize)]
 struct CryptoCompareResponse {
-    USD: f64,
+    #[serde(rename = "USD")]
+    usd: f64,
 }
 
 pub struct CryptoCompareProvider;
@@ -52,7 +53,7 @@ impl PriceProvider for CryptoCompareProvider {
         })?;
 
         // price has 3 decimals
-        let price = (price_data.USD * 1000.0) as u32;
+        let price = (price_data.usd * 1000.0) as u32;
         log::info!("ADA price * 1000: {}", price);
 
         Ok(price)
