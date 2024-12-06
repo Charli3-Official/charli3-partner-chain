@@ -193,17 +193,38 @@ pub mod pallet {
             }
         }
 
-        fn on_finalize(_n: BlockNumberFor<T>) {
-            // Calculate and store average price
-            let (sum, count) = NodesPrices::<T>::iter_values()
-                .fold((0u32, 0u32), |(sum, count), (price, _blocknumber)| {
-                    (sum.saturating_add(price), count + 1)
-                });
-
-            if count > 0 {
-                let average = sum / count;
-                Price::<T>::put(average);
+        fn on_finalize(n: BlockNumberFor<T>) {
+            // Calculate and store median price
+            // let feed_age = FeedAge::<T>::get(); // config checker that returns these values
+            log::info!("Aggregating median price for block {:?}", n);
+            let feed_age: u32 = 2;
+            let min_nodes_for_trusted_aggregation  = 2;
+            let mut count : u32 = 0;
+            let prices = NodesPrices::<T>::iter_values()
+                .filter_map(|(p, a)| if a <= feed_age.into() {
+                        count += 1;
+                        Some(p)
+                    } else {
+                        None
+                    }
+                )
+                .collect();
+            if min_nodes_for_trusted_aggregation <= count {
+                log::info!("{:?} nodes have submitted prices. Calculating median..", count);
+                let mut sorted_prices = BoundedVec::<u32, ConstU32<32>>::truncate_from(prices);
+                sorted_prices.sort();
+                let median;
+                let length = sorted_prices.len();
+                if count % 2 == 0 {
+                    median = sorted_prices[(length - 1) /2];
+                } else {
+                    median = (sorted_prices[(length - 1)/2] + sorted_prices[length/2]) / 2;
+                }
+                Price::<T>::put(median);
+            } else {
+                log::error!("Not enough nodes for trusted aggregation. Reusing median ...");
             }
+
         }
     }
 }
