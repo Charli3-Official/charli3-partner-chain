@@ -2,6 +2,9 @@
 
 pub use pallet::*;
 
+use frame_support::pallet_prelude::{BoundedVec, ConstU32};
+use frame_system::pallet_prelude::BlockNumberFor;
+use scale_info::prelude::vec::Vec;
 use sp_core::crypto::KeyTypeId;
 
 pub const KEY_TYPE: KeyTypeId = KeyTypeId(*b"orac");
@@ -39,11 +42,17 @@ pub mod crypto {
 #[frame_support::pallet]
 pub mod pallet {
     use super::*;
+    use codec::{Decode, Encode, MaxEncodedLen};
     use frame_support::pallet_prelude::*;
+    use frame_support::traits::BuildGenesisConfig;
     use frame_support::traits::BuildGenesisConfig;
     use frame_system::{
         offchain::{AppCrypto, CreateSignedTransaction, SendSignedTransaction, Signer},
         pallet_prelude::*,
+    };
+    use scale_info::{
+        prelude::{fmt, vec},
+        TypeInfo,
     };
     use scale_info::prelude::vec;
     use sp_runtime::offchain::{http};
@@ -53,7 +62,9 @@ pub mod pallet {
     pub struct Pallet<T>(_);
 
     #[pallet::config]
-    pub trait Config: frame_system::Config + CreateSignedTransaction<Call<Self>> {
+    pub trait Config:
+        frame_system::Config + CreateSignedTransaction<Call<Self>> + fmt::Debug
+    {
         type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
         type AuthorityId: AppCrypto<Self::Public, Self::Signature>;
     }
@@ -79,9 +90,10 @@ pub mod pallet {
     >;
 
     /// price after nodes "consensus"
-    /// first (naive) consensus version: average of all nodes prices
+    /// The first value is the median price
+    /// The second value is the age of the median price
     #[pallet::storage]
-    pub type Price<T> = StorageValue<_, u32>;
+    pub type Price<T> = StorageValue<_, (u32, BlockNumberFor<T>)>;
 
     /// oracle genesis config definition and associated macros
     // see https://docs.substrate.io/reference/how-to-guides/basics/configure-genesis-state/
@@ -111,6 +123,24 @@ pub mod pallet {
         }
     }
 
+    // Error messages
+    #[derive(Clone, PartialEq, Encode, Decode, MaxEncodedLen, TypeInfo, Debug)]
+    pub enum ErrorMessage {
+        NotEnoughNodes,
+        NoPreviousMedian,
+    }
+
+    // Aggregation status flag
+    // Used to include more information about an uncommon aggregation if it occurs.
+    #[derive(Clone, PartialEq, Encode, Decode, MaxEncodedLen, TypeInfo, Debug)]
+    pub enum Flag<T: Config> {
+        Ok,
+        Error {
+            message: ErrorMessage,
+            price_age: BlockNumberFor<T>,
+        },
+    }
+
     /// pallet events
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
@@ -119,6 +149,12 @@ pub mod pallet {
             price: u32,
             who: T::AccountId,
             when: BlockNumberFor<T>,
+        },
+        AggregationStatus {
+            median: u32,
+            block: BlockNumberFor<T>,
+            flag: Flag<T>,
+            non_outliers: Vec<u32>,
         },
     }
 

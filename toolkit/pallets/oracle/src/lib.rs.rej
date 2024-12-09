@@ -1,30 +1,110 @@
 diff a/toolkit/pallets/oracle/src/lib.rs b/toolkit/pallets/oracle/src/lib.rs	(rejected hunks)
-@@ -59,7 +59,7 @@ pub mod pallet {
-     pub type MinNodesForTrustedAggregation<T> = StorageValue<_, u32>;
+@@ -197,12 +233,10 @@ pub mod pallet {
+         }
  
-     #[pallet::storage]
--    pub type FeedAge<T: Config> = StorageValue<_, BlockNumberFor<T>>;
-+    pub type FeedAge<T> = StorageValue<_, u16>;
+         fn on_finalize(n: BlockNumberFor<T>) {
+-            // Calculate and store median price
+-            // let feed_age = FeedAge::<T>::get(); // config checker that returns these values
+             log::info!("Aggregating median price for block {:?}", n);
+             let feed_age: u32 = 15;
+-            let min_nodes_for_trusted_aggregation  = 2;
+-            let mut count : u32 = 0;
++            let min_nodes_for_trusted_aggregation = 2;
++            let mut count: u32 = 0;
+             let prices = NodesPrices::<T>::iter_values()
+                 .by_ref()
+                 .filter_map(|(p, a)| {
+@@ -211,25 +245,77 @@ pub mod pallet {
+                         Some(p)
+                     } else {
+                         None
+-                    }}
+-                )
++                    }
++                })
+                 .collect();
+-            if min_nodes_for_trusted_aggregation <= count {
+-                log::info!("{:?} nodes have submitted prices. Calculating median..", count);
+-                let mut sorted_prices = BoundedVec::<u32, ConstU32<32>>::truncate_from(prices);
+-                sorted_prices.sort();
+-                let median;
+-                let length = sorted_prices.len();
+-                if count % 2 == 0 {
+-                    median = sorted_prices[(length - 1) /2];
++            let (median, age, flag): (u32, BlockNumberFor<T>, Flag<T>) =
++                if min_nodes_for_trusted_aggregation <= count {
++                    log::info!(
++                        "{:?} nodes have submitted prices. Calculating median..",
++                        count
++                    );
++                    Self::calculate_median(prices)
+                 } else {
+-                    median = (sorted_prices[(length - 1)/2] + sorted_prices[length/2]) / 2;
+-                }
+-                Price::<T>::put(median);
+-            } else {
+-                log::error!("Not enough nodes for trusted aggregation. Reusing median ...");
+-            }
++                    log::error!("Not enough nodes for trusted aggregation. Reusing median ...");
++                    Self::reuse_previous_median()
++                };
++            Price::<T>::put((median, age));
++            log::info!(
++                "Median price for block {:?} is {:?} with status: {:?}",
++                n,
++                median,
++                flag
++            );
++            Self::deposit_event(Event::AggregationStatus {
++                median,
++                block: n,
++                flag,
++                non_outliers: vec![],
++            })
++        }
++    }
++}
++
++impl<T: Config> Pallet<T> {
++    fn calculate_median(prices: Vec<u32>) -> (u32, BlockNumberFor<T>, Flag<T>) {
++        let mut sorted_prices = BoundedVec::<u32, ConstU32<32>>::truncate_from(prices);
++        sorted_prices.sort();
++
++        let length = sorted_prices.len();
++        let zero: BlockNumberFor<T> = (0 as u32).into();
++        let median: u32;
++
++        if length % 2 == 0 {
++            median = sorted_prices[(length - 1) / 2];
++        } else {
++            median = (sorted_prices[(length - 1) / 2] + sorted_prices[length / 2]) / 2;
++        }
++
++        (median, zero, Flag::<T>::Ok)
++    }
  
-     #[pallet::storage]
-     pub type OutliersRange<T> = StorageValue<_, u32>;
-@@ -84,8 +84,10 @@ pub mod pallet {
-     #[pallet::genesis_config]
-     pub struct GenesisConfig<T: Config> {
-         pub min_nodes_for_trusted_aggregation: u32,
--        pub feed_age: BlockNumberFor<T>,
-+        pub feed_age: u16,
-         pub outliers_range: u32,
-+        // Ties `T` to `GenesisConfig` because is needed for `impl<T: Config> BuildGenesisConfig ...`
-+        _marker: PhantomData<T>,
-     }
- 
-     impl<T: Config> Default for GenesisConfig<T> {
-@@ -94,6 +96,7 @@ pub mod pallet {
-                 min_nodes_for_trusted_aggregation: Default::default(),
-                 feed_age: Default::default(),
-                 outliers_range: Default::default(),
-+                _marker: Default::default(),
-             }
++    fn reuse_previous_median() -> (u32, BlockNumberFor<T>, Flag<T>) {
++        if let Some((median, age)) = Price::<T>::get() {
++            let one: u32 = 1;
++            (
++                median,
++                age + one.into(),
++                Flag::<T>::Error {
++                    message: ErrorMessage::NotEnoughNodes,
++                    price_age: age + one.into(),
++                },
++            )
++        } else {
++            log::error!("Error: no median to reuse.");
++            let zero: BlockNumberFor<T> = (0 as u32).into();
++            (
++                0,
++                zero,
++                Flag::<T>::Error {
++                    message: ErrorMessage::NoPreviousMedian,
++                    price_age: zero,
++                },
++            )
          }
      }
+ }
