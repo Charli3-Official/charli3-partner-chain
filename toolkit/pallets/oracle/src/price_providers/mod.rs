@@ -1,7 +1,7 @@
+use serde::{Deserialize, Serialize};
 use sp_runtime::offchain::{http, Duration};
 use sp_runtime::sp_std::str;
 use sp_runtime::Vec;
-use serde::{Deserialize, Serialize};
 
 pub trait PriceProvider {
     fn fetch_price() -> Result<u32, http::Error>;
@@ -20,9 +20,8 @@ impl PriceProvider for CryptoCompareProvider {
         // 2 seconds timeout for not hanging the node
         let deadline = sp_io::offchain::timestamp().add(Duration::from_millis(2_000));
 
-        let request = http::Request::get(
-            "https://min-api.cryptocompare.com/data/price?fsym=ADA&tsyms=USD",
-        );
+        let request =
+            http::Request::get("https://min-api.cryptocompare.com/data/price?fsym=ADA&tsyms=USD");
 
         let pending = request
             .deadline(deadline)
