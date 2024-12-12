@@ -158,6 +158,11 @@ pub mod pallet {
         },
     }
 
+    #[pallet::error]
+    pub enum Error<T> {
+        InvalidOracleConfig,
+    }
+
     /// pallet calls
     #[pallet::call]
     impl<T: Config> Pallet<T> {

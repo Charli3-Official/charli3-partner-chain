@@ -1,110 +1,110 @@
 diff a/toolkit/pallets/oracle/src/lib.rs b/toolkit/pallets/oracle/src/lib.rs	(rejected hunks)
-@@ -197,12 +233,10 @@ pub mod pallet {
-         }
+@@ -234,44 +239,48 @@ pub mod pallet {
  
          fn on_finalize(n: BlockNumberFor<T>) {
--            // Calculate and store median price
--            // let feed_age = FeedAge::<T>::get(); // config checker that returns these values
              log::info!("Aggregating median price for block {:?}", n);
-             let feed_age: u32 = 15;
--            let min_nodes_for_trusted_aggregation  = 2;
--            let mut count : u32 = 0;
-+            let min_nodes_for_trusted_aggregation = 2;
-+            let mut count: u32 = 0;
-             let prices = NodesPrices::<T>::iter_values()
-                 .by_ref()
-                 .filter_map(|(p, a)| {
-@@ -211,25 +245,77 @@ pub mod pallet {
-                         Some(p)
+-            let feed_age: u32 = 15;
+-            let min_nodes_for_trusted_aggregation = 2;
+-            let mut count: u32 = 0;
+-            let prices = NodesPrices::<T>::iter_values()
+-                .by_ref()
+-                .filter_map(|(p, a)| {
+-                    if (n - a) <= feed_age.into() {
+-                        count += 1;
+-                        Some(p)
++            if let Some((min_nodes_for_trusted_aggregation, feed_age, _outliers_range)) =
++                Self::get_oracle_config()
++            {
++                let mut count: u32 = 0;
++                let prices = NodesPrices::<T>::iter_values()
++                    .by_ref()
++                    .filter_map(|(p, a)| {
++                        if (n - a) <= feed_age.into() {
++                            count += 1;
++                            Some(p)
++                        } else {
++                            None
++                        }
++                    })
++                    .collect();
++                let (median, age, flag): (u32, BlockNumberFor<T>, Flag<T>) =
++                    if min_nodes_for_trusted_aggregation <= count {
++                        log::info!(
++                            "{:?} nodes have submitted prices. Calculating median..",
++                            count
++                        );
++                        Self::calculate_median(prices)
                      } else {
-                         None
--                    }}
--                )
-+                    }
-+                })
-                 .collect();
--            if min_nodes_for_trusted_aggregation <= count {
--                log::info!("{:?} nodes have submitted prices. Calculating median..", count);
--                let mut sorted_prices = BoundedVec::<u32, ConstU32<32>>::truncate_from(prices);
--                sorted_prices.sort();
--                let median;
--                let length = sorted_prices.len();
--                if count % 2 == 0 {
--                    median = sorted_prices[(length - 1) /2];
-+            let (median, age, flag): (u32, BlockNumberFor<T>, Flag<T>) =
-+                if min_nodes_for_trusted_aggregation <= count {
-+                    log::info!(
-+                        "{:?} nodes have submitted prices. Calculating median..",
-+                        count
-+                    );
-+                    Self::calculate_median(prices)
-                 } else {
--                    median = (sorted_prices[(length - 1)/2] + sorted_prices[length/2]) / 2;
--                }
--                Price::<T>::put(median);
--            } else {
--                log::error!("Not enough nodes for trusted aggregation. Reusing median ...");
--            }
-+                    log::error!("Not enough nodes for trusted aggregation. Reusing median ...");
-+                    Self::reuse_previous_median()
-+                };
-+            Price::<T>::put((median, age));
-+            log::info!(
-+                "Median price for block {:?} is {:?} with status: {:?}",
-+                n,
-+                median,
-+                flag
-+            );
-+            Self::deposit_event(Event::AggregationStatus {
-+                median,
-+                block: n,
-+                flag,
-+                non_outliers: vec![],
-+            })
-+        }
-+    }
-+}
-+
-+impl<T: Config> Pallet<T> {
-+    fn calculate_median(prices: Vec<u32>) -> (u32, BlockNumberFor<T>, Flag<T>) {
-+        let mut sorted_prices = BoundedVec::<u32, ConstU32<32>>::truncate_from(prices);
-+        sorted_prices.sort();
-+
-+        let length = sorted_prices.len();
-+        let zero: BlockNumberFor<T> = (0 as u32).into();
-+        let median: u32;
-+
-+        if length % 2 == 0 {
-+            median = sorted_prices[(length - 1) / 2];
-+        } else {
-+            median = (sorted_prices[(length - 1) / 2] + sorted_prices[length / 2]) / 2;
-+        }
-+
-+        (median, zero, Flag::<T>::Ok)
-+    }
- 
-+    fn reuse_previous_median() -> (u32, BlockNumberFor<T>, Flag<T>) {
-+        if let Some((median, age)) = Price::<T>::get() {
-+            let one: u32 = 1;
-+            (
-+                median,
-+                age + one.into(),
-+                Flag::<T>::Error {
-+                    message: ErrorMessage::NotEnoughNodes,
-+                    price_age: age + one.into(),
-+                },
-+            )
-+        } else {
-+            log::error!("Error: no median to reuse.");
-+            let zero: BlockNumberFor<T> = (0 as u32).into();
-+            (
-+                0,
-+                zero,
-+                Flag::<T>::Error {
-+                    message: ErrorMessage::NoPreviousMedian,
-+                    price_age: zero,
-+                },
-+            )
+-                        None
+-                    }
++                        log::error!("Not enough nodes for trusted aggregation. Reusing median ...");
++                        Self::reuse_previous_median()
++                    };
++                Price::<T>::put((median, age));
++                log::info!(
++                    "Median price for block {:?} is {:?} with status: {:?}",
++                    n,
++                    median,
++                    flag
++                );
++                Self::deposit_event(Event::AggregationStatus {
++                    median,
++                    block: n,
++                    flag,
++                    non_outliers: vec![],
+                 })
+-                .collect();
+-            let (median, age, flag): (u32, BlockNumberFor<T>, Flag<T>) =
+-                if min_nodes_for_trusted_aggregation <= count {
+-                    log::info!(
+-                        "{:?} nodes have submitted prices. Calculating median..",
+-                        count
+-                    );
+-                    Self::calculate_median(prices)
+-                } else {
+-                    log::error!("Not enough nodes for trusted aggregation. Reusing median ...");
+-                    Self::reuse_previous_median()
+-                };
+-            Price::<T>::put((median, age));
+-            log::info!(
+-                "Median price for block {:?} is {:?} with status: {:?}",
+-                n,
+-                median,
+-                flag
+-            );
+-            Self::deposit_event(Event::AggregationStatus {
+-                median,
+-                block: n,
+-                flag,
+-                non_outliers: vec![],
+-            })
++            } else {
++                log::error!("Couldn't fetch Oracle Config");
++            }
          }
      }
+ }
+@@ -318,4 +327,23 @@ impl<T: Config> Pallet<T> {
+             )
+         }
+     }
++
++    fn get_oracle_config() -> Option<(u32, u16, u32)> {
++        if let Some(min_nodes) = MinNodesForTrustedAggregation::<T>::get() {
++            if let Some(feed_age) = FeedAge::<T>::get() {
++                if let Some(outliers_range) = OutliersRange::<T>::get() {
++                    Some((min_nodes, feed_age, outliers_range))
++                } else {
++                    log::error!("Error fetching OutliersRange");
++                    None
++                }
++            } else {
++                log::error!("Error fetching FeedAge");
++                None
++            }
++        } else {
++            log::error!("Error fetching MinNodesForTrustedAggregation");
++            None
++        }
++    }
  }
