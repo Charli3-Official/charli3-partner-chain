@@ -27,6 +27,8 @@ sp-io = { workspace = true }
 sp-runtime = { workspace = true }
 serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 serde = { version = "1.0", default-features = false, features = ["derive"] }
+sp-std = { workspace = true }
+hex = { version = "0.4", default-features = false }
 
 [features]
 default = ["std"]
@@ -40,6 +42,8 @@ std = [
 	"log/std",
 	"serde_json/std",
 	"serde/std",
+	"sp-std/std",
+	"hex/std",
 ]
 try-runtime = [
 	"frame-support/try-runtime",

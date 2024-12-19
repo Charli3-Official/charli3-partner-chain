@@ -2,6 +2,9 @@ use serde::{Deserialize, Serialize};
 use sp_runtime::offchain::{http, Duration};
 use sp_runtime::sp_std::str;
 use sp_runtime::Vec;
+use sp_runtime::format;
+use sp_runtime::sp_std::borrow::ToOwned;
+use hex;
 
 pub trait PriceProvider {
     fn fetch_price() -> Result<u32, http::Error>;
@@ -15,13 +18,35 @@ struct CryptoCompareResponse {
 
 pub struct CryptoCompareProvider;
 
+const CRYPTOCOMPARE_API_KEY_DEFAULT: &str = "";
+
 impl PriceProvider for CryptoCompareProvider {
     fn fetch_price() -> Result<u32, http::Error> {
+        // Get API key from offchain storage if available
+        let api_key = match sp_io::offchain::local_storage_get(
+            sp_core::offchain::StorageKind::PERSISTENT,
+            b"cryptocompare_api_key"
+        ) {
+            Some(stored_key) => {
+                // key is stored as bytes, convert to hex
+                let key_in_hex = hex::encode(stored_key);
+                key_in_hex
+            },
+            None => {
+                log::warn!("No API key found in storage, using default: no key");
+                CRYPTOCOMPARE_API_KEY_DEFAULT.to_owned()
+            }
+        };
+
+        let url = format!(
+            "https://min-api.cryptocompare.com/data/price?fsym=ADA&tsyms=USD&api_key={}",
+            api_key
+        );
+
+        let request = http::Request::get(url.as_str());
+
         // 2 seconds timeout for not hanging the node
         let deadline = sp_io::offchain::timestamp().add(Duration::from_millis(2_000));
-
-        let request =
-            http::Request::get("https://min-api.cryptocompare.com/data/price?fsym=ADA&tsyms=USD");
 
         let pending = request
             .deadline(deadline)
