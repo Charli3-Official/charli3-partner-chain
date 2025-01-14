@@ -7,12 +7,17 @@ use crate::{config::config_fields, *};
 use anyhow::{anyhow, Context};
 use serde::Deserialize;
 use sp_core::{ed25519, Pair};
+use serde::Serialize;
 
 #[cfg(test)]
 mod tests;
 
 #[derive(Debug, clap::Parser)]
-pub struct GenerateKeysCmd {}
+pub struct GenerateKeysCmd {
+	pub cross_chain_key: Option<String>,
+	pub grandpa_key: Option<String>,
+	pub aura_key: Option<String>,
+}
 
 #[derive(Debug)]
 pub struct GenerateKeysConfig {
@@ -64,7 +69,7 @@ impl CmdRun for GenerateKeysCmd {
 		let config = GenerateKeysConfig::load(context);
 		context.enewline();
 
-		generate_spo_keys(&config, context)?;
+		generate_spo_keys(&config, context, self)?;
 		context.enewline();
 
 		generate_network_key(&config, context)?;
@@ -117,13 +122,28 @@ pub fn set_dummy_env_vars<C: IOContext>(context: &C) {
 pub fn generate_spo_keys<C: IOContext>(
 	config: &GenerateKeysConfig,
 	context: &C,
+	cmd: &GenerateKeysCmd,
 ) -> anyhow::Result<()> {
 	if prompt_can_write("keys file", KEYS_FILE_PATH, context) {
-		let cross_chain_key = generate_or_load_key(config, context, &CROSS_CHAIN)?;
+		let cross_chain_key = if let Some(key) = &cmd.cross_chain_key {
+			import_existing_key(config, context, &CROSS_CHAIN, key)?
+		} else {
+			generate_or_load_key(config, context, &CROSS_CHAIN)?
+		};
 		context.enewline();
-		let grandpa_key = generate_or_load_key(config, context, &GRANDPA)?;
+
+		let grandpa_key = if let Some(key) = &cmd.grandpa_key {
+			import_existing_key(config, context, &GRANDPA, key)?
+		} else {
+			generate_or_load_key(config, context, &GRANDPA)?
+		};
 		context.enewline();
-		let aura_key = generate_or_load_key(config, context, &AURA)?;
+
+		let aura_key = if let Some(key) = &cmd.aura_key {
+			import_existing_key(config, context, &AURA, key)?
+		} else {
+			generate_or_load_key(config, context, &AURA)?
+		};
 		context.enewline();
 
 		let public_keys_json = serde_json::to_string_pretty(&PermissionedCandidateKeys {
@@ -199,17 +219,54 @@ pub struct KeyGenerationOutput {
 	secret_phrase: String,
 }
 
+const PHRASES_BACKUP_FILE: &str = "partner-chains-phrases-backup.json";
+
+#[derive(Debug, Serialize, Deserialize)]
+struct KeyPhraseBackup {
+	key_type: String,
+	scheme: String,
+	public_key: String,
+	secret_phrase: String,
+}
+
 pub fn generate_keys<C: IOContext>(
 	context: &C,
 	executable: &str,
-	KeyDefinition { scheme, name, .. }: &KeyDefinition,
+	KeyDefinition { scheme, name, key_type, .. }: &KeyDefinition,
 ) -> anyhow::Result<KeyGenerationOutput> {
 	context.eprint(&format!("⚙️ Generating {name} ({scheme}) key"));
 	let output = context
 		.run_command(&format!("{executable} key generate --scheme {scheme} --output-type json"))?;
 
-	serde_json::from_str(&output)
-		.map_err(|_| anyhow!("Failed to parse generated keys json: {output}"))
+	let key_output: KeyGenerationOutput = serde_json::from_str(&output)
+		.map_err(|_| anyhow!("Failed to parse generated keys json: {output}"))?;
+
+	// Save the phrase to backup file
+	let backup = KeyPhraseBackup {
+		key_type: key_type.to_string(),
+		scheme: scheme.to_string(),
+		public_key: key_output.public_key.clone(),
+		secret_phrase: key_output.secret_phrase.clone(),
+	};
+
+	// Read existing backups or create new vec
+	let mut backups: Vec<KeyPhraseBackup> = context
+		.read_file(PHRASES_BACKUP_FILE)
+		.and_then(|content| serde_json::from_str(&content).ok())
+		.unwrap_or_default();
+
+	// Add new backup
+	backups.push(backup);
+
+	// Store updated backups
+	context.write_file(
+		PHRASES_BACKUP_FILE,
+		&serde_json::to_string_pretty(&backups).expect("Failed to serialize backups"),
+	);
+
+	context.eprint(&format!("💾 Phrases backup stored in {}", PHRASES_BACKUP_FILE));
+
+	Ok(key_output)
 }
 
 pub fn store_keys<C: IOContext>(
@@ -260,4 +317,29 @@ pub fn generate_or_load_key<C: IOContext>(
 
 		Ok(new_key.public_key)
 	}
+}
+
+pub fn import_existing_key<C: IOContext>(
+	config: &GenerateKeysConfig,
+	context: &C,
+	key_def: &KeyDefinition,
+	secret_phrase: &str,
+) -> anyhow::Result<String> {
+	context.eprint(&format!("💾 Importing existing {} key", key_def.name));
+	store_keys(
+		context,
+		config,
+		key_def,
+		&KeyGenerationOutput {
+			secret_phrase: secret_phrase.to_string(),
+			public_key: "".to_string(), // This will be updated by store_keys
+		},
+	)?;
+
+	// Return the public key from the stored key
+	let keystore_path = config.keystore_path();
+	let existing_keys = context.list_directory(&keystore_path)?.unwrap_or_default();
+	find_existing_key(&existing_keys, key_def)
+		.map(|key| format!("0x{key}"))
+		.ok_or_else(|| anyhow!("Failed to find imported key in keystore"))
 }
