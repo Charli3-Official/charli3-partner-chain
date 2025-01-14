@@ -1,0 +1,12 @@
+[package]
+name = "plutus-datum-derive"
+version = "1.4.0"
+edition = "2021"
+license = "Apache-2.0"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { workspace = true }
+quote = { workspace = true }

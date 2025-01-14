@@ -1,0 +1,18 @@
+[package]
+name = "byte-string-derive"
+version = "1.4.0"
+edition = "2021"
+license = "Apache-2.0"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { workspace = true }
+quote = { workspace = true }
+
+[dev-dependencies]
+sp-core = { workspace = true, features = ["std"] }
+hex = { workspace = true }
+serde_test = "*"
+serde = { workspace = true }

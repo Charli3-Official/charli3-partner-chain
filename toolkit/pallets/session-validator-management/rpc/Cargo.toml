@@ -1,0 +1,11 @@
+[package]
+name = "pallet-session-validator-management-rpc"
+version = "1.4.0"
+edition = "2021"
+license = "Apache-2.0"
+
+[dependencies]
+derive-new = { workspace = true }
+jsonrpsee = { workspace = true }
+sidechain-domain = { workspace = true, default-features = true }
+sp-session-validator-management-query = { workspace = true, default-features = true }

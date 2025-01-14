@@ -1,0 +1,256 @@
+use crate::config::{CHAIN_CONFIG_FILE_PATH, RESOURCES_CONFIG_FILE_PATH};
+use crate::deregister::DeregisterCmd;
+use crate::ogmios::config::tests::{
+	default_ogmios_service_config, establish_ogmios_configuration_io,
+};
+use crate::tests::{MockIO, MockIOContext, OffchainMock, OffchainMocks};
+use crate::CmdRun;
+use hex_literal::hex;
+use partner_chains_cardano_offchain::OffchainError;
+use serde_json::json;
+use sidechain_domain::*;
+
+const MY_PAYMEMENT_SKEY: &str = "my_payment.skey";
+const MY_COLD_VKEY: &str = "my_cold.vkey";
+
+#[test]
+fn happy_path() {
+	let offchain_mock = OffchainMock::new().with_deregister(
+		genesis_utxo(),
+		payment_signing_key(),
+		stake_ownership_pub_key(),
+		Ok(Some(McTxHash(hex!(
+			"9aebb6d1d7f92f773f7d3025dd2fca67804ad6aea4a84a7696cd5ad15a4ee432"
+		)))),
+	);
+	let mock_context = MockIOContext::new()
+		.with_json_file(CHAIN_CONFIG_FILE_PATH, test_chain_config_content())
+		.with_json_file(RESOURCES_CONFIG_FILE_PATH, test_resources_config_content())
+		.with_json_file(MY_PAYMEMENT_SKEY, valid_payment_signing_key_content())
+		.with_json_file(MY_COLD_VKEY, valid_cold_verification_key_content())
+		.with_offchain_mocks(OffchainMocks::new_with_mock("http://localhost:1337", offchain_mock))
+		.with_expected_io(vec![
+			MockIO::file_read(CHAIN_CONFIG_FILE_PATH),
+			print_info_io(),
+			read_keys_io(),
+			establish_ogmios_configuration_io(None, default_ogmios_service_config()),
+		]);
+	let result = DeregisterCmd.run(&mock_context);
+	assert!(result.is_ok());
+}
+
+#[test]
+fn errors_if_smart_contracts_dont_output_transaction_id() {
+	let offchain_mock = OffchainMock::new().with_deregister(
+		genesis_utxo(),
+		payment_signing_key(),
+		stake_ownership_pub_key(),
+		Err(OffchainError::InternalError("test error".to_string())),
+	);
+	let mock_context = MockIOContext::new()
+		.with_json_file(CHAIN_CONFIG_FILE_PATH, test_chain_config_content())
+		.with_json_file(RESOURCES_CONFIG_FILE_PATH, test_resources_config_content())
+		.with_json_file(MY_PAYMEMENT_SKEY, valid_payment_signing_key_content())
+		.with_json_file(MY_COLD_VKEY, valid_cold_verification_key_content())
+		.with_offchain_mocks(OffchainMocks::new_with_mock("http://localhost:1337", offchain_mock))
+		.with_expected_io(vec![
+			MockIO::file_read(CHAIN_CONFIG_FILE_PATH),
+			print_info_io(),
+			read_keys_io(),
+			establish_ogmios_configuration_io(None, default_ogmios_service_config()),
+		]);
+	let result = DeregisterCmd.run(&mock_context);
+	assert_eq!(
+		result.err().unwrap().to_string(),
+		r#"Candidate deregistration failed: InternalError("test error")!"#
+	);
+}
+
+#[test]
+fn fails_when_chain_config_is_not_valid() {
+	let mock_context = MockIOContext::new()
+		.with_json_file(CHAIN_CONFIG_FILE_PATH, invalid_chain_config_content())
+		.with_expected_io(vec![MockIO::file_read(CHAIN_CONFIG_FILE_PATH)]);
+	let result = DeregisterCmd.run(&mock_context);
+	assert_eq!(
+	    result.err().unwrap().to_string(),
+		"Couldn't parse chain configuration file partner-chains-cli-chain-config.json. The chain configuration file that was used for registration is required in the working directory."
+	);
+}
+
+#[test]
+fn fails_when_payment_signing_key_is_not_valid() {
+	let mock_context = MockIOContext::new()
+		.with_json_file(CHAIN_CONFIG_FILE_PATH, test_chain_config_content())
+		.with_json_file(RESOURCES_CONFIG_FILE_PATH, test_resources_config_content())
+		.with_file(MY_PAYMEMENT_SKEY, "not a proper Cardano key json")
+		.with_expected_io(vec![
+            MockIO::file_read(CHAIN_CONFIG_FILE_PATH),
+			print_info_io(),
+            MockIO::print("Payment signing key and cold verification key used for registration are required to deregister."),
+            read_payment_signing_key()
+		]);
+	let result = DeregisterCmd.run(&mock_context);
+	assert_eq!(
+		result.err().unwrap().to_string(),
+		r#"Failed to parse Cardano key file my_payment.skey: Error("expected ident", line: 1, column: 2)"#
+	);
+}
+
+#[test]
+fn fails_when_cold_key_is_not_valid() {
+	let mock_context = MockIOContext::new()
+		.with_json_file(CHAIN_CONFIG_FILE_PATH, test_chain_config_content())
+		.with_json_file(RESOURCES_CONFIG_FILE_PATH, test_resources_config_content())
+		.with_json_file(MY_PAYMEMENT_SKEY, valid_payment_signing_key_content())
+		.with_file(MY_COLD_VKEY, "not a proper Cardano key json")
+		.with_expected_io(vec![
+			MockIO::file_read(CHAIN_CONFIG_FILE_PATH),
+			print_info_io(),
+			read_keys_io(),
+		]);
+	let result = DeregisterCmd.run(&mock_context);
+	assert_eq!(
+		result.err().unwrap().to_string(),
+		r#"Failed to parse Cardano key file my_cold.vkey: Error("expected ident", line: 1, column: 2)"#
+	);
+}
+
+fn print_info_io() -> MockIO {
+	MockIO::print(
+		r##"This wizard will remove the specified candidate from the committee candidates based on the following chain parameters:
+{
+  "genesis_utxo": "0000000000000000000000000000000000000000000000000000000000000000#0"
+}.
+Committee Candidate Validator Address is 'addr_test1wz5qc7fk2pat0058w4zwvkw35ytptej3nuc3je2kgtan5dq3rt4sc'
+"##,
+	)
+}
+
+fn read_keys_io() -> MockIO {
+	MockIO::Group(vec![
+        MockIO::print("Payment signing key and cold verification key used for registration are required to deregister."),
+        read_payment_signing_key(),
+        read_cold_verification_key(),
+	])
+}
+
+fn read_payment_signing_key() -> MockIO {
+	MockIO::Group(vec![
+		MockIO::file_read(RESOURCES_CONFIG_FILE_PATH),
+		MockIO::prompt(
+			"path to the payment signing key file",
+			Some("payment.skey"),
+			MY_PAYMEMENT_SKEY,
+		),
+		MockIO::file_read(RESOURCES_CONFIG_FILE_PATH),
+		MockIO::file_write_json_contains(
+			RESOURCES_CONFIG_FILE_PATH,
+			"/cardano_payment_signing_key_file",
+			MY_PAYMEMENT_SKEY,
+		),
+		MockIO::file_read(MY_PAYMEMENT_SKEY),
+	])
+}
+
+fn read_cold_verification_key() -> MockIO {
+	MockIO::Group(vec![
+		MockIO::file_read(RESOURCES_CONFIG_FILE_PATH),
+		MockIO::prompt("path to the cold verification key file", Some("cold.vkey"), MY_COLD_VKEY),
+		MockIO::file_read(RESOURCES_CONFIG_FILE_PATH),
+		MockIO::file_write_json_contains(
+			RESOURCES_CONFIG_FILE_PATH,
+			"/cardano_cold_verification_key_file",
+			MY_COLD_VKEY,
+		),
+		MockIO::file_read(MY_COLD_VKEY),
+	])
+}
+
+fn test_chain_config_content() -> serde_json::Value {
+	json!({
+		"chain_parameters": chain_parameters_json(),
+		"cardano": {
+			"security_parameter": 1234,
+			"active_slots_coeff": 0.1,
+			"first_epoch_timestamp_millis": 1_666_742_400_000_i64,
+			"epoch_duration_millis": 86400000,
+			"first_epoch_number": 1,
+			"first_slot_number": 4320,
+			"network": "testnet"
+		},
+		"cardano_addresses": {
+			"committee_candidates_address": "addr_test1wz5qc7fk2pat0058w4zwvkw35ytptej3nuc3je2kgtan5dq3rt4sc",
+			"d_parameter_policy_id": "d0ebb61e2ba362255a7c4a253c6578884603b56fb0a68642657602d6",
+			"permissioned_candidates_policy_id": "58b4ba68f641d58f7f1bba07182eca9386da1e88a34d47a14638c3fe",
+			"native_token": {
+				"asset": {
+					"policy_id": "ada83ddd029614381f00e28de0922ab0dec6983ea9dd29ae20eef9b4",
+					"asset_name": "5043546f6b656e44656d6f",
+				},
+				"illiquid_supply_address": "addr_test1wrhvtvx3f0g9wv9rx8kfqc60jva3e07nqujk2cspekv4mqs9rjdvz"
+			},
+		},
+		"initial_permissioned_candidates": []
+	})
+}
+
+fn invalid_chain_config_content() -> serde_json::Value {
+	// Most of the required fields are missing
+	json!({
+		"cardano": {
+			"security_parameter": 1234,
+			"active_slots_coeff": 0.1,
+			"first_epoch_timestamp_millis": 1_666_742_400_000_i64,
+			"epoch_duration_millis": 86400000,
+			"first_epoch_number": 1,
+			"first_slot_number": 4320,
+			"network": "testnet"
+		},
+	})
+}
+
+fn chain_parameters_json() -> serde_json::Value {
+	json!({
+	  "genesis_utxo": "0000000000000000000000000000000000000000000000000000000000000000#0"
+	})
+}
+
+fn test_resources_config_content() -> serde_json::Value {
+	json!({
+		"substrate_node_executable_path": "./partner-chains-node"
+	})
+}
+
+fn valid_payment_signing_key_content() -> serde_json::Value {
+	json!(
+		{
+		"type": "PaymentSigningKeyShelley_ed25519",
+		"description": "Payment Signing Key",
+		"cborHex": "58200000000000000000000000000000000000000000000000000000000000000001"
+	})
+}
+
+fn valid_cold_verification_key_content() -> serde_json::Value {
+	json!(
+		{
+			"type": "StakePoolVerificationKey_ed25519",
+			"description": "Stake Pool Operator Verification Key",
+			"cborHex": "58201111111111111111111111111111111111111111111111111111111111111111"
+		}
+	)
+}
+
+fn genesis_utxo() -> UtxoId {
+	"0000000000000000000000000000000000000000000000000000000000000000#0"
+		.parse()
+		.unwrap()
+}
+
+fn payment_signing_key() -> MainchainPrivateKey {
+	MainchainPrivateKey(hex!("0000000000000000000000000000000000000000000000000000000000000001"))
+}
+
+fn stake_ownership_pub_key() -> MainchainPublicKey {
+	MainchainPublicKey(hex!("1111111111111111111111111111111111111111111111111111111111111111"))
+}
