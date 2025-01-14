@@ -38,6 +38,31 @@ impl<'a> ConfigFieldDefinition<'a, String> {
 	}
 }
 
+impl<'a> ConfigFieldDefinition<'a, Option<u16>> {
+	pub fn prompt_with_default_from_file_and_save<C: IOContext>(&self, context: &C) -> Option<u16> {
+		let value = context.prompt(
+			self.name,
+			self.load_from_file(context)
+				.map(|v| v.map(|n| n.to_string()))
+				.flatten()
+				.as_deref()
+				.or(self.default)
+		);
+
+		let parsed = if value.is_empty() {
+			None
+		} else {
+			Some(value.parse().unwrap_or_else(|_| {
+				eprintln!("Invalid port number. Please provide a valid port or leave empty.");
+				std::process::exit(1);
+			}))
+		};
+
+		self.save_to_file(&parsed, context);
+		parsed
+	}
+}
+
 impl<'a, T> ConfigFieldDefinition<'a, T> {
 	pub fn prompt_with_default_from_file_parse_and_save<C: IOContext>(
 		&self,
@@ -193,12 +218,15 @@ impl<'a, T> ConfigFieldDefinition<'a, T> {
 pub struct ServiceConfig {
 	pub protocol: NetworkProtocol,
 	pub hostname: String,
-	pub port: u16,
+	pub port: Option<u16>,
 }
 
 impl Display for ServiceConfig {
 	fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-		f.write_str(&format!("{}://{}:{}", self.protocol, self.hostname, self.port))
+			match self.port {
+				Some(port) => write!(f, "{}://{}:{}", self.protocol, self.hostname, port),
+				None => write!(f, "{}://{}", self.protocol, self.hostname),
+			}
 	}
 }
 
@@ -487,11 +515,11 @@ pub mod config_fields {
 		_marker: PhantomData,
 	};
 
-	pub const OGMIOS_PORT: ConfigFieldDefinition<'static, u16> = ConfigFieldDefinition {
+	pub const OGMIOS_PORT: ConfigFieldDefinition<'static, Option<u16>> = ConfigFieldDefinition {
 		config_file: RESOURCES_CONFIG_FILE_PATH,
 		path: &["ogmios", "port"],
 		name: "Ogmios port",
-		default: Some("1337"),
+		default: Some(""),
 		_marker: PhantomData,
 	};
 
@@ -580,7 +608,7 @@ pub mod config_fields {
 		config_file: RESOURCES_CONFIG_FILE_PATH,
 		path: &["node_p2p_port"],
 		name: "substrate-node p2p protocol TCP port",
-		default: Some("30333"),
+		default: Some("3033"),
 		_marker: PhantomData,
 	};
 

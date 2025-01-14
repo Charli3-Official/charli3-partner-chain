@@ -19,8 +19,13 @@ pub(crate) fn prompt_ogmios_configuration<C: IOContext>(
 		.select_options_with_default_from_file_and_save(OGMIOS_PROTOCOL.name, context)
 		.map_err(anyhow::Error::msg)?;
 	let ogmios_hostname = OGMIOS_HOSTNAME.prompt_with_default_from_file_and_save(context);
-	let ogmios_port = OGMIOS_PORT.prompt_with_default_from_file_parse_and_save(context)?;
-	Ok(ServiceConfig { protocol: ogmios_protocol, hostname: ogmios_hostname, port: ogmios_port })
+	let ogmios_port = OGMIOS_PORT.prompt_with_default_from_file_and_save(context);
+
+	Ok(ServiceConfig {
+		protocol: ogmios_protocol,
+		hostname: ogmios_hostname,
+		port: ogmios_port
+	})
 }
 
 #[cfg(test)]
