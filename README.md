@@ -16,7 +16,7 @@ The `--deployment-option 3` is the number of the deployment option we need: Card
 
 The `--postgres-password pass` is the password for the Postgres database. Could be any password.
 
-Then, with `docker compose up`, we can start the services.
+Then, with `docker compose up`, we can start the services. For turning them off, use `docker compose down --volumes`.
 
 ### Setup the Substrate node
 
