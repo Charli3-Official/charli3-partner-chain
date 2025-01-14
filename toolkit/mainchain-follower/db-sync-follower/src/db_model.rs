@@ -316,18 +316,21 @@ pub(crate) async fn get_latest_block_info(
 ) -> Result<Option<Block>, SqlxError> {
 	Ok(sqlx::query_as::<_, Block>(
 		"
+WITH max_block AS (
+	SELECT MAX(block_no) as max_no
+	FROM block
+	WHERE block_no IS NOT NULL
+)
 SELECT
-  block.block_no,
-  block.hash,
-  block.epoch_no,
-  block.slot_no,
-  block.time
-FROM
-  block
-WHERE block.block_no IS NOT NULL
-ORDER BY block.block_no DESC
+	block.block_no,
+	block.hash,
+	block.epoch_no,
+	block.slot_no,
+	block.time
+FROM block
+JOIN max_block ON block.block_no = max_block.max_no
 LIMIT 1
-    ",
+		",
 	)
 	.fetch_optional(pool)
 	.await?)
@@ -374,11 +377,21 @@ pub(crate) async fn get_highest_block(
 ) -> Result<Option<Block>, SqlxError> {
 	Ok(sqlx::query_as::<_, Block>(
 		"
-SELECT block_no, hash, epoch_no, slot_no, time
-FROM block
-WHERE block_no <= $1 AND $2 <= slot_no AND slot_no <= $3 AND $4 <= time AND time <= $5
-ORDER BY block_no DESC
-LIMIT 1",
+WITH filtered_blocks AS (
+	SELECT block_no, hash, epoch_no, slot_no, time
+	FROM block
+	WHERE block_no <= $1
+		AND slot_no BETWEEN $2 AND $3
+		AND time BETWEEN $4 AND $5
+)
+SELECT *
+FROM filtered_blocks
+WHERE block_no = (
+	SELECT MAX(block_no)
+	FROM filtered_blocks
+)
+LIMIT 1
+		",
 	)
 	.bind(max_block_number)
 	.bind(min_slot)
@@ -427,11 +440,26 @@ pub(crate) async fn get_latest_stable_epoch(
 	pool: &Pool<Postgres>,
 	security_parameter: u32,
 ) -> Result<Option<EpochNumber>, SqlxError> {
-	let sql = "SELECT stable_block.epoch_no - 1 as epoch_no
-FROM block INNER JOIN block as stable_block ON block.block_no - $1 = stable_block.block_no
-WHERE block.block_no IS NOT NULL
-ORDER BY block.block_no DESC
-LIMIT 1";
+	let sql = "
+WITH latest_block AS (
+	SELECT block_no, epoch_no
+	FROM block
+	WHERE block_no = (
+		SELECT MAX(block_no)
+		FROM block
+		WHERE block_no IS NOT NULL
+	)
+),
+stable_block AS (
+	SELECT b.epoch_no
+	FROM block b
+	JOIN latest_block lb ON b.block_no = (lb.block_no - $1)
+)
+SELECT (epoch_no - 1) as epoch_no
+FROM stable_block
+LIMIT 1
+	";
+
 	Ok(sqlx::query_as::<_, EpochNumberRow>(sql)
 		.bind(BlockNumber(security_parameter))
 		.fetch_optional(pool)
@@ -458,27 +486,31 @@ pub(crate) async fn get_token_utxo_for_epoch(
 	asset: &Asset,
 	epoch: EpochNumber,
 ) -> Result<Option<TokenTxOutput>, SqlxError> {
-	// In practice queried assets always have empty name.
-	// However, it's important to keep multi_asset.name condition, to enable use of compound index on multi_asset policy and name.
-	let sql = "SELECT
-			origin_tx.hash        AS origin_tx_hash,
-        	tx_out.index          AS utxo_index,
-        	origin_block.epoch_no AS tx_epoch_no,
-        	origin_block.block_no AS tx_block_no,
-        	origin_block.slot_no  AS tx_slot_no,
-        	origin_tx.block_index AS tx_block_index,
-        	datum.value           AS datum
-        FROM ma_tx_out
-        INNER JOIN multi_asset          ON ma_tx_out.ident = multi_asset.id
-        INNER JOIN tx_out               ON ma_tx_out.tx_out_id = tx_out.id
-        INNER JOIN tx origin_tx         ON tx_out.tx_id = origin_tx.id
-        INNER JOIN block origin_block   ON origin_tx.block_id = origin_block.id
-        LEFT JOIN datum                 ON tx_out.data_hash = datum.hash
-        WHERE multi_asset.policy = $1
-		AND multi_asset.name = $2
-        AND origin_block.epoch_no <= $3
+	let sql = "
+        WITH relevant_assets AS (
+            SELECT id
+            FROM multi_asset
+            WHERE policy = $1 AND name = $2
+            LIMIT 1
+        )
+        SELECT
+            origin_tx.hash        AS origin_tx_hash,
+            tx_out.index          AS utxo_index,
+            origin_block.epoch_no AS tx_epoch_no,
+            origin_block.block_no AS tx_block_no,
+            origin_block.slot_no  AS tx_slot_no,
+            origin_tx.block_index AS tx_block_index,
+            datum.value           AS datum
+        FROM relevant_assets
+        INNER JOIN ma_tx_out              ON ma_tx_out.ident = relevant_assets.id
+        INNER JOIN tx_out                 ON ma_tx_out.tx_out_id = tx_out.id
+        INNER JOIN tx origin_tx           ON tx_out.tx_id = origin_tx.id
+        INNER JOIN block origin_block     ON origin_tx.block_id = origin_block.id
+        LEFT JOIN datum                   ON tx_out.data_hash = datum.hash
+        WHERE origin_block.epoch_no <= $3
         ORDER BY tx_block_no DESC, origin_tx.block_index DESC
         LIMIT 1";
+
 	Ok(sqlx::query_as::<_, TokenTxOutput>(sql)
 		.bind(&asset.policy_id.0)
 		.bind(&asset.asset_name.0)
@@ -549,11 +581,14 @@ pub(crate) async fn get_utxos_for_address(
 }
 /// Used by `get_token_utxo_for_epoch` (CandidatesDataSourceImpl),
 #[cfg(feature = "candidate-source")]
-pub(crate) async fn create_idx_ma_tx_out_ident(pool: &Pool<Postgres>) -> Result<(), SqlxError> {
-	let sql = "CREATE INDEX IF NOT EXISTS idx_ma_tx_out_ident ON ma_tx_out(ident)";
-	info!("Executing '{}', this might take a while", sql);
-	sqlx::query(sql).execute(pool).await?;
-	info!("Index 'idx_ma_tx_out_ident' is created");
+pub(crate) async fn create_idx_ma_tx_out_ident(_pool: &Pool<Postgres>) -> Result<(), SqlxError> {
+	// // Skip index creation since we don't have permissions!
+	// // Note: This may impact query performance
+	// let sql = "CREATE INDEX IF NOT EXISTS idx_ma_tx_out_ident ON ma_tx_out(ident)";
+	// info!("Executing '{}', this might take a while", sql);
+	// sqlx::query(sql).execute(pool).await?;
+	// info!("Index 'idx_ma_tx_out_ident' is created");
+	info!("Skipping index creation due to permission constraints");
 	Ok(())
 }
 
