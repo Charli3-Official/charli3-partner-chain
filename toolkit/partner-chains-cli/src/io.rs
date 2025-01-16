@@ -184,30 +184,23 @@ impl IOContext for DefaultCmdRunContext {
 	fn offchain_impl(&self, ogmios_config: &ServiceConfig) -> anyhow::Result<Self::Offchain> {
 		let ogmios_address = ogmios_config.to_string();
 
-		// Clone the address for the error messages
-		let ogmios_address_clone = ogmios_address.clone();
+		// Use block_in_place to avoid runtime conflicts
+		tokio::task::block_in_place(move || {
+			// Create a new thread to avoid blocking the current runtime
+			std::thread::spawn(move || {
+				// Create a new runtime in the new thread
+				let rt = tokio::runtime::Builder::new_current_thread()
+					.enable_all()
+					.build()
+					.map_err(|e| anyhow::anyhow!("Failed to build runtime: {}", e))?;
 
-		// Use spawn_blocking to avoid runtime conflicts
-		let result = tokio::task::spawn_blocking(move || {
-			let rt = match tokio::runtime::Builder::new_current_thread()
-				.enable_all()
-				.build() {
-					Ok(rt) => rt,
-					Err(e) => return Err(format!("Failed to build runtime: {}", e)),
-				};
-			rt.block_on(client_for_url(&ogmios_address))
-		});
-
-		match tokio::task::block_in_place(|| {
-			let rt = tokio::runtime::Builder::new_current_thread()
-				.build()
-				.expect("Failed to build runtime");
-			rt.block_on(result)
-		}) {
-			Ok(Ok(client)) => Ok(client),
-			Ok(Err(e)) => Err(anyhow!(format!("Couldn't open connection to Ogmios at {}: {}", ogmios_address_clone, e))),
-			Err(e) => Err(anyhow!(format!("Task failed: {}", e))),
-		}
+				// Use the new runtime to connect to Ogmios
+				rt.block_on(client_for_url(&ogmios_address))
+					.map_err(|e| anyhow::anyhow!("Couldn't open connection to Ogmios at {}: {}", ogmios_address, e))
+			})
+			.join()
+			.map_err(|_| anyhow::anyhow!("Thread panicked"))?
+		})
 	}
 }
 

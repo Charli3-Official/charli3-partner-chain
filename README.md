@@ -20,9 +20,9 @@ Then, with `docker compose up`, we can start the services. For turning them off,
 
 ### Setup the Substrate node
 
-Build the Partner Chains node from source with the following command:
+Build the Partner Chains node from source with:
 ```
-cargo build --profile=production
+cargo build
 ```
 And then you can follow the instructions on [docs/user-guides](docs/user-guides) for setting up the Substrate nodes for the different roles you want to.
 
