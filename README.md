@@ -18,6 +18,23 @@ The `--postgres-password pass` is the password for the Postgres database. Could 
 
 Then, with `docker compose up`, we can start the services. For turning them off, use `docker compose down --volumes`.
 
+#### How to configure local testnet
+
+As in this context we use a local testnet as main blockchain we can configure the chain parameters. The configuration for all the services can be found in the [`configurations`](./dev/local-environment/configurations/) directory, within the `local-environment` directory. To configure the testnet, we'll focus on the `cardano` and `genesis` folders.
+
+Within `genesis`, for example, one could want to modify the epoch length, or the slot length of the main chain. In this case, we can go to the [`genesis.json`](./dev/local-environment/configurations/genesis/shelley/genesis.json) within the `shelley` folder in `genesis`.
+At the beginning of the file, we have the `epoch length` field, which originally is set to `120`. 
+
+https://github.com/txpipe-shop/charli3-substrate-partner-chains/blob/99abd801afaf1792e12972c3767542c62fa5ade2/dev/local-environment/configurations/genesis/shelley/genesis.json#L1-L4
+
+By replacing that value, we can modify the length of the epochs in the local testnet. Note that here the `epoch` length is measured in amount of `slots`.
+
+Further in this same file, around line 53, we can find the `slot length` field, that is set at `1` initially.
+
+https://github.com/txpipe-shop/charli3-substrate-partner-chains/blob/99abd801afaf1792e12972c3767542c62fa5ade2/dev/local-environment/configurations/genesis/shelley/genesis.json#L52-L55
+
+Changing this value will result in a modification of the slot length in the local testnet. Note that the slot length is measured in `seconds`.
+
 ### Setup the Substrate node
 
 Build the Partner Chains node from source with:
