@@ -101,17 +101,23 @@ tx_out4=1000000000 # partner-chains-node-5 (eve)
 tx_out5_lovelace=10000000
 tx_out5_reward_token="1000000 $reward_token_policy_id.$reward_token_asset_name"
 
+# you can declare new addresses and lovelace amounts here:
+# my_address=
+# my_amount=1000000000
+
 # Total output without fee
-total_output=$((tx_out1 + tx_out2 + tx_out3 + tx_out4 + tx_out5_lovelace))
+total_output=$((tx_out1 + tx_out2 + tx_out3 + tx_out4 + tx_out5_lovelace + my_amount))
 
 fee=1000000
 
 # Calculate remaining balance to return to the genesis address
 change=$((tx_in_amount - total_output - fee))
 
+
 # Build the raw transaction
 cardano-cli latest transaction build-raw \
   --tx-in $tx_in1 \
+  --tx-out "$my_address+$my_amount" \
   --tx-out "$new_address+$tx_out1" \
   --tx-out "$new_address+$tx_out2" \
   --tx-out "$dave_address+$tx_out3" \

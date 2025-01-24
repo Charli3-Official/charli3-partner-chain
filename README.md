@@ -35,6 +35,25 @@ https://github.com/txpipe-shop/charli3-substrate-partner-chains/blob/99abd801afa
 
 Changing this value will result in a modification of the slot length in the local testnet. Note that the slot length is measured in `seconds`.
 
+Another detail we might want to change is the initial funds distribution. In the `entrypoint.sh` file within the `configurations/cardano` directory, we can find the inital set up of the node. One of the inital configurations is a transaction that creates utxos for some addresses.
+
+https://github.com/txpipe-shop/charli3-substrate-partner-chains/blob/99abd801afaf1792e12972c3767542c62fa5ade2/dev/local-environment/configurations/cardano/entrypoint.sh#L112-L124
+
+This command can be modified to pay out to other addresses by adding a line like this:
+```bash
+--tx-out "$my_address+$my_amount" \
+```
+where `my_address` is the desired recipient in Bech32 format, and `my_amount` is the desired amount of lovelace.
+These two variables need to be defined previously, a good place to declare them is below the definition of the output amounts:
+
+https://github.com/txpipe-shop/charli3-substrate-partner-chains/blob/4b4f5e4c328fa92ea11d13e2be9ddc8f01823eb0/dev/local-environment/configurations/cardano/entrypoint.sh#L96-L105
+
+And the `my_amount` also needs to be added to the following line, where the final output amount is calculated so the transaction is balanced:
+
+https://github.com/txpipe-shop/charli3-substrate-partner-chains/blob/4b4f5e4c328fa92ea11d13e2be9ddc8f01823eb0/dev/local-environment/configurations/cardano/entrypoint.sh#L109
+
+If it's not added, the transaction won't be submitted correctly.
+
 ### Setup the Substrate node
 
 Build the Partner Chains node from source with:
