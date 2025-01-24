@@ -46,11 +46,11 @@ This command can be modified to pay out to other addresses by adding a line like
 where `my_address` is the desired recipient in Bech32 format, and `my_amount` is the desired amount of lovelace.
 These two variables need to be defined previously, a good place to declare them is below the definition of the output amounts:
 
-https://github.com/txpipe-shop/charli3-substrate-partner-chains/blob/4b4f5e4c328fa92ea11d13e2be9ddc8f01823eb0/dev/local-environment/configurations/cardano/entrypoint.sh#L96-L105
+https://github.com/txpipe-shop/charli3-substrate-partner-chains/blob/8d58952cae3db7d875d67f3723062bdceea49334/dev/local-environment/configurations/cardano/entrypoint.sh#L96-L106
 
 And the `my_amount` also needs to be added to the following line, where the final output amount is calculated so the transaction is balanced:
 
-https://github.com/txpipe-shop/charli3-substrate-partner-chains/blob/4b4f5e4c328fa92ea11d13e2be9ddc8f01823eb0/dev/local-environment/configurations/cardano/entrypoint.sh#L109
+https://github.com/txpipe-shop/charli3-substrate-partner-chains/blob/8d58952cae3db7d875d67f3723062bdceea49334/dev/local-environment/configurations/cardano/entrypoint.sh#L109
 
 If it's not added, the transaction won't be submitted correctly.
 
