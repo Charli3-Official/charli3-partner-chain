@@ -30,6 +30,43 @@ And then you can follow the instructions on [docs/user-guides](docs/user-guides)
 2. [Permissioned Validator](./docs/user-guides/permissioned.md)
 3. [Registered Validator](./docs/user-guides/registered.md)
 
+## Configuration
+
+### Local Testnet
+
+As in this context we use a local testnet as main blockchain we can configure the chain parameters. The configuration for all the services can be found in the [`configurations`](./dev/local-environment/configurations/) directory, within the `local-environment` directory. To configure the testnet, we'll focus on the `cardano` and `genesis` folders.
+
+Within `genesis`, for example, one could want to modify the epoch length, or the slot length of the main chain. In this case, we can go to the [`genesis.json`](./dev/local-environment/configurations/genesis/shelley/genesis.json) within the `shelley` folder in `genesis`.
+At the beginning of the file, we have the `epoch length` field, which originally is set to `120`. 
+
+https://github.com/txpipe-shop/charli3-substrate-partner-chains/blob/99abd801afaf1792e12972c3767542c62fa5ade2/dev/local-environment/configurations/genesis/shelley/genesis.json#L1-L4
+
+By replacing that value, we can modify the length of the epochs in the local testnet. Note that here the `epoch` length is measured in amount of `slots`.
+
+Further in this same file, around line 53, we can find the `slot length` field, that is set at `1` initially.
+
+https://github.com/txpipe-shop/charli3-substrate-partner-chains/blob/99abd801afaf1792e12972c3767542c62fa5ade2/dev/local-environment/configurations/genesis/shelley/genesis.json#L52-L55
+
+Changing this value will result in a modification of the slot length in the local testnet. Note that the slot length is measured in `seconds`.
+
+Another detail we might want to change is the initial funds distribution. In the `entrypoint.sh` file within the `configurations/cardano` directory, we can find the inital set up of the node. One of the inital configurations is a transaction that creates utxos for some addresses.
+
+https://github.com/txpipe-shop/charli3-substrate-partner-chains/blob/99abd801afaf1792e12972c3767542c62fa5ade2/dev/local-environment/configurations/cardano/entrypoint.sh#L112-L124
+
+This command can be modified to pay out to other addresses by adding a line like this:
+```bash
+--tx-out "$my_address+$my_amount" \
+```
+where `my_address` is the desired recipient in Bech32 format, and `my_amount` is the desired amount of lovelace.
+These two variables need to be defined previously, a good place to declare them is below the definition of the output amounts:
+
+https://github.com/txpipe-shop/charli3-substrate-partner-chains/blob/8d58952cae3db7d875d67f3723062bdceea49334/dev/local-environment/configurations/cardano/entrypoint.sh#L96-L106
+
+And the `my_amount` also needs to be added to the following line, where the final output amount is calculated so the transaction is balanced:
+
+https://github.com/txpipe-shop/charli3-substrate-partner-chains/blob/8d58952cae3db7d875d67f3723062bdceea49334/dev/local-environment/configurations/cardano/entrypoint.sh#L109
+
+If it's not added, the transaction won't be submitted correctly.
 
 ## Features
 
