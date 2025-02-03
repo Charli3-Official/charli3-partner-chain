@@ -102,8 +102,10 @@ tx_out5_lovelace=10000000
 tx_out5_reward_token="1000000 $reward_token_policy_id.$reward_token_asset_name"
 
 # you can declare new addresses and lovelace amounts here:
-# my_address=
-# my_amount=1000000000
+
+# for example, using alice's address
+my_address="addr_test1vpl6fzacldwksp866f3rwuuvujgdsj0y2eckrcu2hpq4lucnzv00d"
+my_amount=1000000000
 
 # Total output without fee
 total_output=$((tx_out1 + tx_out2 + tx_out3 + tx_out4 + tx_out5_lovelace + my_amount))

@@ -18,7 +18,21 @@ The `--postgres-password pass` is the password for the Postgres database. Could 
 
 Then, with `docker compose up`, we can start the services. For turning them off, use `docker compose down --volumes`.
 
-#### How to configure local testnet
+### Setup the Substrate node
+
+Build the Partner Chains node from source with:
+```
+cargo build
+```
+And then you can follow the instructions on [docs/user-guides](docs/user-guides) for setting up the Substrate nodes for the different roles you want to.
+
+1. [Chain Builder](./docs/user-guides/chain-builder.md)
+2. [Permissioned Validator](./docs/user-guides/permissioned.md)
+3. [Registered Validator](./docs/user-guides/registered.md)
+
+## Configuration
+
+### Local Testnet
 
 As in this context we use a local testnet as main blockchain we can configure the chain parameters. The configuration for all the services can be found in the [`configurations`](./dev/local-environment/configurations/) directory, within the `local-environment` directory. To configure the testnet, we'll focus on the `cardano` and `genesis` folders.
 
@@ -53,19 +67,6 @@ And the `my_amount` also needs to be added to the following line, where the fina
 https://github.com/txpipe-shop/charli3-substrate-partner-chains/blob/8d58952cae3db7d875d67f3723062bdceea49334/dev/local-environment/configurations/cardano/entrypoint.sh#L109
 
 If it's not added, the transaction won't be submitted correctly.
-
-### Setup the Substrate node
-
-Build the Partner Chains node from source with:
-```
-cargo build
-```
-And then you can follow the instructions on [docs/user-guides](docs/user-guides) for setting up the Substrate nodes for the different roles you want to.
-
-1. [Chain Builder](./docs/user-guides/chain-builder.md)
-2. [Permissioned Validator](./docs/user-guides/permissioned.md)
-3. [Registered Validator](./docs/user-guides/registered.md)
-
 
 ## Features
 
