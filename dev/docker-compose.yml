@@ -1,0 +1,140 @@
+services:
+
+  cardano-node-1:
+    container_name: cardano-node-1
+    image: ghcr.io/intersectmbo/cardano-node:10.1.4
+    platform: linux/amd64
+    volumes:
+      - cardano-node-1-data:/data
+      - shared-volume:/shared
+      - ./configurations/busybox:/busybox
+      - ./configurations/pc-contracts-cli:/pc-contracts-cli
+      - ./configurations/cardano/entrypoint.sh:/entrypoint.sh
+      - ./configurations/cardano/topology-pool1.json:/shared/node-1-topology.json
+      - ./configurations/cardano/keys/cold.vkey:/keys/cold.vkey
+      - ./configurations/cardano/keys/kes.skey:/keys/kes.skey
+      - ./configurations/cardano/keys/vrf.skey:/keys/vrf.skey
+      - ./configurations/cardano/keys/funded_address.skey:/keys/funded_address.skey
+      - ./configurations/cardano/keys/funded_address.vkey:/keys/funded_address.vkey
+      - ./configurations/cardano/keys/op.cert:/keys/node.cert
+      - ./configurations/cardano/reward_token_policy.script:/shared/reward_token_policy.script
+      - ./configurations/cardano/config-pool1.json:/shared/node-1-config.json.base
+      - ./configurations/db-sync/config.json:/shared/db-sync-config.json.base
+      - ./configurations/genesis/byron/genesis.json:/shared/byron/genesis.json.base
+      - ./configurations/genesis/shelley/genesis.json:/shared/shelley/genesis.json.base
+      - ./configurations/genesis/shelley/genesis.alonzo.json:/shared/shelley/genesis.alonzo.json.base
+      - ./configurations/genesis/shelley/genesis-utxo.addr:/shared/shelley/genesis-utxo.addr
+      - ./configurations/genesis/shelley/genesis-utxo.skey:/shared/shelley/genesis-utxo.skey
+      - ./configurations/genesis/shelley/genesis-utxo.vkey:/shared/shelley/genesis-utxo.vkey
+      - ./configurations/genesis/conway/genesis.conway.json:/shared/conway/genesis.conway.json.base
+    environment:
+      - CARDANO_NODE_SOCKET_PATH=/data/node.socket
+    entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    ports:
+      - "32000:32000"
+
+  ogmios:
+    container_name: ogmios
+    image: cardanosolutions/ogmios:v6.11.0
+    platform: linux/amd64
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    environment:
+      - DATA_DIR=/data
+      - OGMIOS_PORT=1337
+    volumes:
+      - shared-volume:/shared
+      - ogmios-data:/data
+      - cardano-node-1-data:/node-ipc
+      - ./configurations/ogmios/entrypoint.sh:/entrypoint.sh
+      - ./configurations/busybox:/busybox
+    ports:
+      - "1337:1337"
+    healthcheck:
+      disable: true
+    deploy:
+      resources:
+        limits:
+          cpus: "0.000"
+          memory: 1000G
+
+  kupo:
+    container_name: kupo
+    image: cardanosolutions/kupo:v2.10.0
+    platform: linux/amd64
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    volumes:
+      - shared-volume:/shared
+      - cardano-node-1-data:/node-ipc
+      - kupo-workdir:/kupo-workdir
+      - ./configurations/kupo/entrypoint.sh:/entrypoint.sh
+      - ./configurations/busybox:/busybox
+    ports:
+      - "1442:1442"
+    healthcheck:
+      disable: true
+    deploy:
+      resources:
+        limits:
+          cpus: "0.000"
+          memory: 1000G
+
+  db-sync:
+    container_name: db-sync
+    image: ghcr.io/intersectmbo/cardano-db-sync:13.6.0.4
+    platform: linux/amd64
+    volumes:
+      - shared-volume:/shared
+      - db-sync-state-dir:/var/lib
+      - cardano-node-1-data:/node-ipc
+      - ./configurations/busybox:/busybox
+      - ./configurations/db-sync/entrypoint.sh:/entrypoint.sh
+    entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    command: >
+      --config /shared/db-sync-config.json
+      --socket-path /node-ipc/node.socket
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_DB=cexplorer
+      - POSTGRES_PASSWORD=pass
+      - POSTGRES_PORT=5431
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "0.000"
+          memory: 1000G
+
+  postgres:
+    container_name: postgres
+    image: postgres:17.2
+    platform: linux/amd64
+    command: postgres -c maintenance_work_mem=256MB -p 5431
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=pass
+      - PGDATA=/pgdata
+      - POSTGRES_MULTIPLE_DATABASES=cexplorer,qa_demo
+    ports:
+      - "5431:5431"
+    volumes:
+      - ./configurations/postgres/entrypoint.sh:/usr/local/bin/custom-entrypoint.sh
+      - ./configurations/postgres/init.sh:/docker-entrypoint-initdb.d/init.sh
+    deploy:
+      resources:
+        limits:
+          cpus: "0.000"
+          memory: 1000G
+
+volumes:
+  cardano-node-1-data: {}
+  shared-volume: {}
+  db-sync-state-dir: {}
+  partner-chains-node-1-data: {}
+  partner-chains-node-2-data: {}
+  partner-chains-node-3-data: {}
+  partner-chains-node-4-data: {}
+  partner-chains-node-5-data: {}
+  ogmios-data: {}
+  ipc: {}
+  kupo-workdir: {}
