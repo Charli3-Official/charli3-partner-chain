@@ -14,6 +14,7 @@ members = [
 	"toolkit/pallets/session-validator-management",
 	"toolkit/pallets/session-validator-management/benchmarking",
 	"toolkit/pallets/session-validator-management/rpc",
+	"toolkit/pallets/oracle",
 	"toolkit/primitives/consensus/aura",
 	"toolkit/primitives/block-rewards",
 	"toolkit/primitives/domain",
@@ -224,3 +225,4 @@ pallet-session-runtime-stub = { path = "toolkit/pallets/pallet-session-runtime-s
 partner-chains-cardano-offchain = { path = "toolkit/offchain", default-features = false }
 partner-chains-plutus-data = { path = "toolkit/primitives/plutus-data", default-features = false }
 partner-chains-smart-contracts-commands = { path = "toolkit/cli/smart-contracts-commands", default-features = false }
+pallet-oracle = { path = "./toolkit/pallets/oracle", default-features = false }

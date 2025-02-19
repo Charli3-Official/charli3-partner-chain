@@ -15,7 +15,7 @@ use price_providers::{CryptoCompareProvider, PriceProvider};
 pub const SCALING_FACTOR: f64 = 10000.0;
 
 pub mod crypto {
-    use super::KEY_TYPE;
+    use crate::KEY_TYPE;
     use sp_core::sr25519::Signature as Sr25519Signature;
     use sp_runtime::{
         app_crypto::{app_crypto, sr25519},
@@ -44,7 +44,7 @@ pub mod crypto {
 #[frame_support::pallet]
 pub mod pallet {
     use super::*;
-    use codec::{Decode, Encode, MaxEncodedLen};
+    use parity_scale_codec::{Decode, Encode, MaxEncodedLen};
     use frame_support::{pallet_prelude::*, traits::BuildGenesisConfig};
     use frame_system::{
         offchain::{AppCrypto, CreateSignedTransaction, SendSignedTransaction, Signer},
@@ -102,7 +102,7 @@ pub mod pallet {
         pub outliers_range: u32,
         pub divergence_percentage: u32,
         // Ties `T` to `GenesisConfig` because is needed for `impl<T: Config> BuildGenesisConfig ...`
-        _marker: PhantomData<T>,
+        pub _marker: PhantomData<T>,
     }
 
     impl<T: Config> Default for GenesisConfig<T> {

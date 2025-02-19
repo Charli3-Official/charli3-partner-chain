@@ -1,7 +1,7 @@
 use crate::chain_spec::*;
 use sc_service::ChainType;
 use sidechain_runtime::{
-	AuraConfig, BalancesConfig, GrandpaConfig, NativeTokenManagementConfig, RuntimeGenesisConfig,
+	AuraConfig, BalancesConfig, GrandpaConfig, NativeTokenManagementConfig, OracleConfig, RuntimeGenesisConfig,
 	SessionCommitteeManagementConfig, SessionConfig, SidechainConfig, SudoConfig, SystemConfig,
 };
 
@@ -41,6 +41,13 @@ pub fn chain_spec() -> Result<ChainSpec, envy::Error> {
 			main_chain_scripts: sp_native_token_management::MainChainScripts::read_from_env()?,
 			..Default::default()
 		},
+		oracle: OracleConfig {
+			min_nodes_for_trusted_aggregation: 2,
+            feed_age: 15,
+            outliers_range: 2,
+            divergence_percentage: 15,
+			..Default::default()
+		}
 	};
 	let genesis_json = serde_json::to_value(runtime_genesis_config)
 		.expect("Genesis config must be serialized correctly");

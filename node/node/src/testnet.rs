@@ -2,7 +2,7 @@ use crate::chain_spec::*;
 use sc_service::ChainType;
 use sidechain_domain::*;
 use sidechain_runtime::{
-	AccountId, AuraConfig, BalancesConfig, GrandpaConfig, NativeTokenManagementConfig,
+	AccountId, AuraConfig, BalancesConfig, GrandpaConfig, NativeTokenManagementConfig, OracleConfig,
 	RuntimeGenesisConfig, SessionCommitteeManagementConfig, SessionConfig, SidechainConfig,
 	SudoConfig, SystemConfig,
 };
@@ -203,6 +203,13 @@ pub fn testnet_genesis(
 			main_chain_scripts: sp_native_token_management::MainChainScripts::read_from_env()?,
 			..Default::default()
 		},
+		oracle: OracleConfig {
+			min_nodes_for_trusted_aggregation: 2,
+            feed_age: 15,
+            outliers_range: 2,
+            divergence_percentage: 15,
+			..Default::default()
+		}
 	};
 
 	Ok(serde_json::to_value(config).expect("Genesis config must be serialized correctly"))
