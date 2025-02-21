@@ -1,20 +1,25 @@
 use crate::chain_spec::*;
 use sc_service::ChainType;
 use sidechain_runtime::{
-	AuraConfig, BalancesConfig, GrandpaConfig, NativeTokenManagementConfig, OracleConfig, RuntimeGenesisConfig,
+	AccountId, AuraConfig, BalancesConfig, GrandpaConfig, NativeTokenManagementConfig, OracleConfig, RuntimeGenesisConfig,
 	SessionCommitteeManagementConfig, SessionConfig, SidechainConfig, SudoConfig, SystemConfig,
 };
+use std::str::FromStr;
 
 /// Produces template chain spec for Partner Chains.
 /// This code should be run by `partner-chains-cli chain-spec`, to produce JSON chain spec file.
 /// `initial_validators` fields should be updated by the `partner-chains-cli chain-spec`.
 /// Add and modify other fields of `ChainSpec` accordingly to the needs of your chain.
 pub fn chain_spec() -> Result<ChainSpec, envy::Error> {
+	let endowed_accounts: Vec<AccountId> = [
+	AccountId::from_str("0xd43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d")
+		.unwrap()].to_vec();
 	let runtime_genesis_config = RuntimeGenesisConfig {
 		system: SystemConfig { ..Default::default() },
 		balances: BalancesConfig {
 			// Update if any endowed accounts are required.
-			balances: vec![],
+			// CAMBIAR ACA!
+			balances: endowed_accounts.iter().cloned().map(|k| (k, 1 << 60)).collect(),
 		},
 		aura: AuraConfig { authorities: vec![] },
 		grandpa: GrandpaConfig { authorities: vec![], ..Default::default() },
@@ -42,7 +47,7 @@ pub fn chain_spec() -> Result<ChainSpec, envy::Error> {
 			..Default::default()
 		},
 		oracle: OracleConfig {
-			min_nodes_for_trusted_aggregation: 2,
+			min_nodes_for_trusted_aggregation: 1,
             feed_age: 15,
             outliers_range: 2,
             divergence_percentage: 15,

@@ -342,10 +342,15 @@ impl<T: Config> Pallet<T> {
     }
 
     fn calculate_median(prices: Vec<u32>, length: usize) -> u32 {
-        if length % 2 == 0 {
-            prices[(length - 1) / 2]
+        if length > 0 {
+            if length % 2 == 0 {
+                prices[(length - 1) / 2]
+            } else {
+                (prices[(length - 1) / 2] + prices[length / 2]) / 2
+            }
         } else {
-            (prices[(length - 1) / 2] + prices[length / 2]) / 2
+            log::error!("Error: length of vec is 0. Vec: {:?}", prices);
+            0
         }
     }
 
