@@ -1,8 +1,9 @@
 use crate::chain_spec::*;
 use sc_service::ChainType;
 use sidechain_runtime::{
-	AccountId, AuraConfig, BalancesConfig, GrandpaConfig, NativeTokenManagementConfig, OracleConfig, RuntimeGenesisConfig,
-	SessionCommitteeManagementConfig, SessionConfig, SidechainConfig, SudoConfig, SystemConfig,
+	AccountId, AuraConfig, BalancesConfig, GrandpaConfig, NativeTokenManagementConfig,
+	OracleConfig, RuntimeGenesisConfig, SessionCommitteeManagementConfig, SessionConfig,
+	SidechainConfig, SudoConfig, SystemConfig,
 };
 use std::str::FromStr;
 
@@ -11,9 +12,10 @@ use std::str::FromStr;
 /// `initial_validators` fields should be updated by the `partner-chains-cli chain-spec`.
 /// Add and modify other fields of `ChainSpec` accordingly to the needs of your chain.
 pub fn chain_spec() -> Result<ChainSpec, envy::Error> {
-	let endowed_accounts: Vec<AccountId> = [
-	AccountId::from_str("0xd43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d")
-		.unwrap()].to_vec();
+	let endowed_accounts: Vec<AccountId> =
+		[AccountId::from_str("0xd43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d")
+			.unwrap()]
+		.to_vec();
 	let runtime_genesis_config = RuntimeGenesisConfig {
 		system: SystemConfig { ..Default::default() },
 		balances: BalancesConfig {
@@ -48,11 +50,11 @@ pub fn chain_spec() -> Result<ChainSpec, envy::Error> {
 		},
 		oracle: OracleConfig {
 			min_nodes_for_trusted_aggregation: 1,
-            feed_age: 15,
-            outliers_range: 2,
-            divergence_percentage: 15,
+			feed_age: 15,
+			outliers_range: 2,
+			divergence_percentage: 15,
 			..Default::default()
-		}
+		},
 	};
 	let genesis_json = serde_json::to_value(runtime_genesis_config)
 		.expect("Genesis config must be serialized correctly");

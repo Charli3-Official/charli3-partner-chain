@@ -2,9 +2,9 @@ use crate::chain_spec::*;
 use sc_service::ChainType;
 use sidechain_domain::*;
 use sidechain_runtime::{
-	AccountId, AuraConfig, BalancesConfig, GrandpaConfig, NativeTokenManagementConfig, OracleConfig,
-	RuntimeGenesisConfig, SessionCommitteeManagementConfig, SessionConfig, SidechainConfig,
-	SudoConfig, SystemConfig,
+	AccountId, AuraConfig, BalancesConfig, GrandpaConfig, NativeTokenManagementConfig,
+	OracleConfig, RuntimeGenesisConfig, SessionCommitteeManagementConfig, SessionConfig,
+	SidechainConfig, SudoConfig, SystemConfig,
 };
 use sidechain_slots::SlotsPerEpoch;
 use sp_core::bytes::from_hex;
@@ -205,11 +205,11 @@ pub fn testnet_genesis(
 		},
 		oracle: OracleConfig {
 			min_nodes_for_trusted_aggregation: 2,
-            feed_age: 15,
-            outliers_range: 2,
-            divergence_percentage: 15,
+			feed_age: 15,
+			outliers_range: 2,
+			divergence_percentage: 15,
 			..Default::default()
-		}
+		},
 	};
 
 	Ok(serde_json::to_value(config).expect("Genesis config must be serialized correctly"))
