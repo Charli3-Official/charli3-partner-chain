@@ -6228,6 +6228,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "pallet-oracle"
+version = "0.1.0"
+dependencies = [
+ "frame-support",
+ "frame-system",
+ "log",
+ "parity-scale-codec",
+ "scale-info",
+ "serde",
+ "serde_json",
+ "sp-core",
+ "sp-io",
+ "sp-runtime",
+]
+
+[[package]]
 name = "pallet-partner-chains-session"
 version = "1.4.0"
 dependencies = [
@@ -10047,6 +10063,7 @@ dependencies = [
  "pallet-block-rewards",
  "pallet-grandpa",
  "pallet-native-token-management",
+ "pallet-oracle",
  "pallet-partner-chains-session",
  "pallet-session",
  "pallet-session-runtime-stub",
