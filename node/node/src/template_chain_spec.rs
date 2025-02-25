@@ -20,7 +20,6 @@ pub fn chain_spec() -> Result<ChainSpec, envy::Error> {
 		system: SystemConfig { ..Default::default() },
 		balances: BalancesConfig {
 			// Update if any endowed accounts are required.
-			// CAMBIAR ACA!
 			balances: endowed_accounts.iter().cloned().map(|k| (k, 1 << 60)).collect(),
 		},
 		aura: AuraConfig { authorities: vec![] },
