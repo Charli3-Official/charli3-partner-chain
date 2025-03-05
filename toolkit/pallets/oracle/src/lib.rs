@@ -135,7 +135,7 @@ pub mod pallet {
 			non_outlier_prices: Vec<u32>,
 			outliers: u16,
 			outlier_prices: Vec<u32>,
-			rewards: Vec<T::AccountId>
+			reward_elegible_nodes: Vec<T::AccountId>
 		},
 		AggregationNotPerformed,
 	}
@@ -313,20 +313,11 @@ impl<T: Config> Pallet<T> {
 			} else {
 				(sorted_prices[0], (sorted_prices, vec![]))
 			};
-		let mut non_outliers_copy = non_outlier_prices.clone();
-        let rewards: Vec<T::AccountId> = sorted_acc_and_prices.into_iter().scan(
-            non_outliers_copy.remove(0),
-            |compare, (add, price)| {
-                while price > *compare {
-                    *compare = non_outliers_copy.remove(0);
-                }
-                if price == *compare {
-                    Some(Some(add))
-                } else {
-                    Some(None)
-                }
-            }
-        ).flatten().collect();
+        let reward_elegible_nodes: Vec<T::AccountId> = sorted_acc_and_prices
+			.into_iter()
+			.filter(|(_, price)| non_outlier_prices.contains(price))
+			.map(|(account, _)| account)
+			.collect();
 		(
 			median,
 			0,
@@ -336,7 +327,7 @@ impl<T: Config> Pallet<T> {
 				non_outlier_prices,
 				outliers: outlier_prices.len() as u16,
 				outlier_prices,
-				rewards
+				reward_elegible_nodes
 			},
 		)
 	}
