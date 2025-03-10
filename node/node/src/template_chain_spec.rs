@@ -15,7 +15,7 @@ use std::str::FromStr;
 pub fn chain_spec() -> Result<ChainSpec, envy::Error> {
 	// complete here with the corresponding keys and addresses
 	let sr25519_key_and_mainchain_addresses: Vec<(&str,  &str)> = [
-		("0x...", "stake_test...")
+		// ("0x...", "stake_test...")
 	].to_vec();
 	let accounts_and_mainchain_addresses: Vec<(AccountId, MainchainAddress)> = sr25519_key_and_mainchain_addresses.iter().cloned().map(
 		|(sr25519_key, mc_address)| (AccountId::from_str(sr25519_key).unwrap(), MainchainAddress::from_str(mc_address).unwrap())
