@@ -422,8 +422,8 @@ impl pallet_timestamp::Config for Runtime {
 	type WeightInfo = weights::pallet_timestamp::WeightInfo<Runtime>;
 }
 
-/// Existential deposit.
-pub const EXISTENTIAL_DEPOSIT: u128 = 500;
+/// Existential deposit can be zero since the currency of the partner chain is not important.
+pub const EXISTENTIAL_DEPOSIT: u128 = 0;
 
 impl pallet_balances::Config for Runtime {
 	type MaxLocks = ConstU32<50>;
