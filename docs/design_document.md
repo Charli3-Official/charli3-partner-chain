@@ -119,6 +119,22 @@ pub type DivergencePercentage<T> = StorageValue<_, u32>;
 
 Initial values for these configuration fields can be defined in the chain specification file, which are then applied in the genesis block.
 
+#### Partner chain account to Cardano address map
+
+This storage map is used to associate accounts from the partner chain to Cardano addresses.
+
+```rust
+#[pallet::storage]
+pub type OracKeyToMainchainAddress<T: Config> = StorageMap<
+    Hasher = Identity,
+    Key = T::AccountId,
+    Value = MainchainAddress,
+    QueryKind = OptionQuery
+>;
+```
+
+ There is a partner chain account for each node, and the Cardano address related to it in this map can be used to award rewards in the case that the node is elegible for it.
+
 ### Aggregation algorithm
 
 The Oracle configuration storage is used in the aggregation process to define the conditions necessary for the aggregation algorithm to be executed normally. That is, we need to have at least `N` nodes with a price at most `M` blocks old, where:
@@ -150,7 +166,7 @@ The `Status` event informs the following details of the aggregation algorithm fo
 - the `age` of the price
 - the current `block`
 - the `aggregation status`, which is one of the following:
-    - `AggregationPerformed` including the details about the outliers, and non_outliers
+    - `AggregationPerformed` including the details about the outliers, non_outliers, and a list of addresses elegible for rewards 
     - `AggregationNotPerformed` to signal that there isn't a new aggregated price for the block
 
 ### Price Providers
