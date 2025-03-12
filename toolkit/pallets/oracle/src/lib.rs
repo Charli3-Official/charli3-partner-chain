@@ -9,6 +9,7 @@ use sp_core::crypto::KeyTypeId;
 
 pub const KEY_TYPE: KeyTypeId = KeyTypeId(*b"orac");
 
+use sidechain_domain::MainchainAddress;
 mod price_providers;
 use price_providers::{CryptoCompareProvider, PriceProvider};
 
@@ -76,6 +77,14 @@ pub mod pallet {
 
 	#[pallet::storage]
 	pub type DivergencePercentage<T> = StorageValue<_, u32>;
+	
+	#[pallet::storage]
+	pub type OracKeyToMainchainAddress<T: Config> = StorageMap<
+		Hasher = Identity,
+		Key = T::AccountId,
+		Value = MainchainAddress,
+		QueryKind = OptionQuery
+	>;
 
 	/// NodesPrices store latest price for each node
 	/// about Identity hasher https://docs.substrate.io/build/runtime-storage/#common-substrate-hashers
@@ -101,6 +110,7 @@ pub mod pallet {
 		pub feed_age: u16,
 		pub outliers_range: u32,
 		pub divergence_percentage: u32,
+		pub orac_key_to_mainchain_address: Vec<(T::AccountId, MainchainAddress)>,
 		// Ties `T` to `GenesisConfig` because is needed for `impl<T: Config> BuildGenesisConfig ...`
 		pub _marker: PhantomData<T>,
 	}
@@ -112,6 +122,7 @@ pub mod pallet {
 				feed_age: Default::default(),
 				outliers_range: Default::default(),
 				divergence_percentage: Default::default(),
+				orac_key_to_mainchain_address: Default::default(),
 				_marker: Default::default(),
 			}
 		}
@@ -124,18 +135,21 @@ pub mod pallet {
 			<FeedAge<T>>::put(&self.feed_age);
 			<OutliersRange<T>>::put(&self.outliers_range);
 			<DivergencePercentage<T>>::put(&self.divergence_percentage);
+			for (account_id, pub_key) in &self.orac_key_to_mainchain_address {
+				<OracKeyToMainchainAddress<T>>::insert(account_id, pub_key);
+			}
 		}
 	}
 
 	// Information about whether the aggregation happened or not
 	#[derive(Clone, PartialEq, Encode, Decode, TypeInfo, Debug)]
-	pub enum AggregationStatus<T: Config> {
+	pub enum AggregationStatus {
 		AggregationPerformed {
 			non_outliers: u16,
 			non_outlier_prices: Vec<u32>,
 			outliers: u16,
 			outlier_prices: Vec<u32>,
-			reward_elegible_nodes: Vec<T::AccountId>
+			reward_elegible_nodes: Vec<MainchainAddress>
 		},
 		AggregationNotPerformed,
 	}
@@ -163,7 +177,7 @@ pub mod pallet {
 			participating_nodes: u32,
 			age: u16,
 			block: BlockNumberFor<T>,
-			status: AggregationStatus<T>,
+			status: AggregationStatus,
 		},
 	}
 
@@ -255,7 +269,7 @@ pub mod pallet {
 						}
 					})
 					.collect();
-				let (median_price, age, flag, status): (u32, u16, Flag, crate::AggregationStatus<T>) =
+				let (median_price, age, flag, status): (u32, u16, Flag, crate::AggregationStatus) =
 					if min_nodes_for_trusted_aggregation <= participating_nodes {
 						log::info!(
 							"{:?} nodes submitted a price. Aggregating median price ...",
@@ -293,7 +307,7 @@ impl<T: Config> Pallet<T> {
 		acc_and_prices: Vec<(T::AccountId, u32)>,
 		outliers_range: u32,
 		divergence_percentage: u32,
-	) -> (u32, u16, Flag, crate::AggregationStatus<T>) {
+	) -> (u32, u16, Flag, crate::AggregationStatus) {
 		let mut acc_and_prices = BoundedVec::<(T::AccountId, u32), ConstU32<32>>::truncate_from(acc_and_prices);
 		acc_and_prices.sort_by_key(|k| k.1);
 		let sorted_acc_and_prices = acc_and_prices.to_vec();
@@ -313,10 +327,11 @@ impl<T: Config> Pallet<T> {
 			} else {
 				(sorted_prices[0], (sorted_prices, vec![]))
 			};
-        let reward_elegible_nodes: Vec<T::AccountId> = sorted_acc_and_prices
+        let reward_elegible_nodes: Vec<MainchainAddress> = sorted_acc_and_prices
 			.into_iter()
 			.filter(|(_, price)| non_outlier_prices.contains(price))
-			.map(|(account, _)| account)
+			.map(|(account, _)| OracKeyToMainchainAddress::<T>::get(account))
+			.flatten()
 			.collect();
 		(
 			median,
@@ -332,7 +347,7 @@ impl<T: Config> Pallet<T> {
 		)
 	}
 
-	fn reuse_previous_median() -> (u32, u16, Flag, crate::AggregationStatus<T>) {
+	fn reuse_previous_median() -> (u32, u16, Flag, crate::AggregationStatus) {
 		if let Some((median, age)) = Price::<T>::get() {
 			(median, age + 1, Flag::NotEnoughNodes, AggregationStatus::AggregationNotPerformed)
 		} else {
