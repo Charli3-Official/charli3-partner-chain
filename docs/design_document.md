@@ -152,6 +152,7 @@ Then, the `aggregation algorithm` will follow these steps:
    a. If there are enough prices, `sort` and `calculate median`
    b. If there aren't enough prices, `use previous median`
 4. `Filter` outliers
+5. `List` the Cardano addresses that could receive rewards, according to the non-outlier prices
 
 Once the calculation is finished, the median price is stored in `Price`, along with the age set as `0`, and a `Status` event is dispatched.
 
