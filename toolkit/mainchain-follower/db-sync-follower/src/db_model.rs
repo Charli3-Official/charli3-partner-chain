@@ -486,13 +486,23 @@ pub(crate) async fn get_token_utxo_for_epoch(
 	asset: &Asset,
 	epoch: EpochNumber,
 ) -> Result<Option<TokenTxOutput>, SqlxError> {
+	// First, check if the asset exists and get its ID in a separate query
+	let asset_id = sqlx::query_as::<_, (i64,)>(
+		"SELECT id FROM multi_asset WHERE policy = $1 AND name = $2 LIMIT 1"
+	)
+	.bind(&asset.policy_id.0)
+	.bind(&asset.asset_name.0)
+	.fetch_optional(pool)
+	.await?;
+
+	// If asset doesn't exist, return None early
+	let asset_id = match asset_id {
+		Some((id,)) => id,
+		None => return Ok(None),
+	};
+
+	// Now use the asset ID in the main query with added indexes
 	let sql = "
-        WITH relevant_assets AS (
-            SELECT id
-            FROM multi_asset
-            WHERE policy = $1 AND name = $2
-            LIMIT 1
-        )
         SELECT
             origin_tx.hash        AS origin_tx_hash,
             tx_out.index          AS utxo_index,
@@ -501,19 +511,18 @@ pub(crate) async fn get_token_utxo_for_epoch(
             origin_block.slot_no  AS tx_slot_no,
             origin_tx.block_index AS tx_block_index,
             datum.value           AS datum
-        FROM relevant_assets
-        INNER JOIN ma_tx_out              ON ma_tx_out.ident = relevant_assets.id
+        FROM ma_tx_out
         INNER JOIN tx_out                 ON ma_tx_out.tx_out_id = tx_out.id
         INNER JOIN tx origin_tx           ON tx_out.tx_id = origin_tx.id
         INNER JOIN block origin_block     ON origin_tx.block_id = origin_block.id
         LEFT JOIN datum                   ON tx_out.data_hash = datum.hash
-        WHERE origin_block.epoch_no <= $3
-        ORDER BY tx_block_no DESC, origin_tx.block_index DESC
+        WHERE ma_tx_out.ident = $1
+        AND origin_block.epoch_no <= $2
+        ORDER BY origin_block.block_no DESC, origin_tx.block_index DESC
         LIMIT 1";
 
 	Ok(sqlx::query_as::<_, TokenTxOutput>(sql)
-		.bind(&asset.policy_id.0)
-		.bind(&asset.asset_name.0)
+		.bind(asset_id)
 		.bind(epoch)
 		.fetch_optional(pool)
 		.await?)

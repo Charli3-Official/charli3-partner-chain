@@ -48,7 +48,7 @@ pub async fn get_connection(
 ) -> Result<PgPool, Box<dyn Error + Send + Sync + 'static>> {
 	let connect_options = PgConnectOptions::from_str(connection_string)?;
 	let pool = PgPoolOptions::new()
-		.max_connections(5)
+		.max_connections(1)
 		.acquire_timeout(acquire_timeout)
 		.connect_with(connect_options.clone())
 		.await
