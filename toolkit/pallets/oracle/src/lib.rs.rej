@@ -1,28 +1,192 @@
 diff a/toolkit/pallets/oracle/src/lib.rs b/toolkit/pallets/oracle/src/lib.rs	(rejected hunks)
-@@ -10,7 +10,7 @@ use sp_core::crypto::KeyTypeId;
- pub const KEY_TYPE: KeyTypeId = KeyTypeId(*b"orac");
+@@ -16,38 +16,38 @@ pub const SCALING_FACTOR: f64 = 10000.0;
  
- mod price_providers;
--use price_providers::{PriceProvider, CryptoCompareProvider};
-+use price_providers::{CryptoCompareProvider, PriceProvider};
+ pub mod crypto {
+     use super::KEY_TYPE;
+-    use sp_core::sr25519::Signature as Sr25519Signature;
++    use sp_core::ed25519::Signature as Ed25519Signature;
+     use sp_runtime::{
+-        app_crypto::{app_crypto, sr25519},
++        app_crypto::{app_crypto, ed25519},
+         traits::Verify,
+         MultiSignature, MultiSigner,
+     };
+-    app_crypto!(sr25519, KEY_TYPE);
++    app_crypto!(ed25519, KEY_TYPE);
  
- pub const SCALING_FACTOR: f64 = 10000.0;
+     pub struct OracleAuthId;
  
-@@ -52,14 +52,14 @@ pub mod pallet {
-         offchain::{AppCrypto, CreateSignedTransaction, SendSignedTransaction, Signer},
+     impl frame_system::offchain::AppCrypto<MultiSigner, MultiSignature> for OracleAuthId {
+         type RuntimeAppPublic = Public;
+-        type GenericSignature = sp_core::sr25519::Signature;
+-        type GenericPublic = sp_core::sr25519::Public;
++        type GenericSignature = sp_core::ed25519::Signature;
++        type GenericPublic = sp_core::ed25519::Public;
+     }
+ 
+-    impl frame_system::offchain::AppCrypto<<Sr25519Signature as Verify>::Signer, Sr25519Signature>
++    impl frame_system::offchain::AppCrypto<<Ed25519Signature as Verify>::Signer, Ed25519Signature>
+         for OracleAuthId
+     {
+         type RuntimeAppPublic = Public;
+-        type GenericSignature = sp_core::sr25519::Signature;
+-        type GenericPublic = sp_core::sr25519::Public;
++        type GenericSignature = sp_core::ed25519::Signature;
++        type GenericPublic = sp_core::ed25519::Public;
+     }
+ }
+ 
+ #[frame_support::pallet]
+ pub mod pallet {
+     use super::*;
+-    use codec::{Decode, Encode, MaxEncodedLen};
++    use codec::{Decode, Encode, MaxEncodedLen, EncodeLike};
+     use frame_support::{pallet_prelude::*, traits::BuildGenesisConfig};
+     use frame_system::{
+-        offchain::{AppCrypto, CreateSignedTransaction, SendSignedTransaction, Signer},
++        offchain::{AppCrypto, CreateSignedTransaction, SendSignedTransaction, Signer, SignMessage, SigningTypes},
          pallet_prelude::*,
      };
-+    use scale_info::prelude::vec;
-+    use scale_info::{prelude::fmt, TypeInfo};
-     use scale_info::{
-         prelude::{fmt, vec},
-         TypeInfo,
-     };
--    use scale_info::prelude::vec;
--    use sp_runtime::offchain::{http};
-+    use sp_runtime::offchain::http;
-     use sp_runtime::sp_std::str;
--    use scale_info::{prelude::fmt, TypeInfo};
+     use scale_info::{prelude::fmt, TypeInfo};
+@@ -76,6 +76,9 @@ pub mod pallet {
  
-     #[pallet::pallet]
-     pub struct Pallet<T>(_);
+     #[pallet::storage]
+     pub type DivergencePercentage<T> = StorageValue<_, u32>;
++    
++    #[pallet::storage]
++    pub type SignatureStorage<T> = StorageValue<_, [u8; 64]>;
+ 
+     /// NodesPrices store latest price for each node
+     /// about Identity hasher https://docs.substrate.io/build/runtime-storage/#common-substrate-hashers
+@@ -129,12 +132,13 @@ pub mod pallet {
+ 
+     // Information about whether the aggregation happened or not
+     #[derive(Clone, PartialEq, Encode, Decode, TypeInfo, Debug)]
+-    pub enum AggregationStatus {
++    pub enum AggregationStatus<T:Config> {
+         AggregationPerformed {
+             non_outliers: u16,
+             non_outlier_prices: Vec<u32>,
+             outliers: u16,
+             outlier_prices: Vec<u32>,
++            rewards: Vec<T::AccountId>
+         },
+         AggregationNotPerformed,
+     }
+@@ -162,7 +166,7 @@ pub mod pallet {
+             participating_nodes: u32,
+             age: u16,
+             block: BlockNumberFor<T>,
+-            status: AggregationStatus,
++            status: AggregationStatus<T>,
+         },
+     }
+ 
+@@ -247,18 +259,18 @@ pub mod pallet {
+             )) = Self::get_oracle_config()
+             {
+                 let mut participating_nodes: u32 = 0;
+-                let prices = NodesPrices::<T>::iter_values()
++                let prices = NodesPrices::<T>::iter()
+                     .by_ref()
+-                    .filter_map(|(p, a)| {
++                    .filter_map(|(k, (p, a))| {
+                         if (n - a) <= feed_age.into() {
+                             participating_nodes += 1;
+-                            Some(p)
++                            Some((k, p))
+                         } else {
+                             None
+                         }
+                     })
+                     .collect();
+-                let (median_price, age, flag, status): (u32, u16, Flag, crate::AggregationStatus) =
++                let (median_price, age, flag, status): (u32, u16, Flag, crate::AggregationStatus<T>) =
+                     if min_nodes_for_trusted_aggregation <= participating_nodes {
+                         log::info!(
+                             "{:?} nodes submitted a price. Aggregating median price ...",
+@@ -288,19 +300,43 @@ pub mod pallet {
+                 log::error!("Couldn't fetch Oracle Config");
+             }
+         }
++
++        // fn on_initialize(_n: BlockNumberFor<T>) -> Weight {
++        //     log::info!("Starting block...");
++        //     log::info!("Signing message");
++        //     let mut acc_list = Signer::<T, T::AuthorityId>::keystore_accounts();
++        //     match acc_list.next() {
++        //         Some(signer_account) if acc_list.next().is_none() => {
++        //             let signer = Signer::<T, T::AuthorityId>::all_accounts()
++        //                 .with_filter(vec![signer_account.clone().public]);
++        //             if signer.can_sign() {
++        //                 let signed_message = signer.sign_message(b"something");
++        //                 log::info!("Signed: {:?}", signed_message);
++        //             } else {
++        //                 log::error!("Couldn't sign");
++        //             }
++        //         },
++        //         Some(_accounts) => log::error!("More than one account. Expected only one"),
++        //         None => {
++        //             log::error!("Couldn't fetch account");
++        //         }
++        //     }
++        //     Weight::zero()
++        // }
+     }
+ }
+ 
+ impl<T: Config> Pallet<T> {
+     fn aggregate(
+-        prices: Vec<u32>,
++        add_and_prices: Vec<(T::AccountId, u32)>,
+         outliers_range: u32,
+         divergence_percentage: u32,
+-    ) -> (u32, u16, Flag, crate::AggregationStatus) {
+-        let mut prices = BoundedVec::<u32, ConstU32<32>>::truncate_from(prices);
+-        prices.sort();
+-        let sorted_prices = prices.to_vec();
+-        let length: usize = prices.len();
++    ) -> (u32, u16, Flag, crate::AggregationStatus<T>) {
++        let mut add_and_prices = BoundedVec::<(T::AccountId, u32), ConstU32<32>>::truncate_from(add_and_prices);
++        add_and_prices.sort_by_key(|k| k.1);
++        let sorted_add_prices = add_and_prices.to_vec();
++        let length: usize = add_and_prices.len();
++        let (_addresses, sorted_prices): (Vec<T::AccountId>, Vec<u32>) = sorted_add_prices.clone().into_iter().unzip();
+         let median = Self::calculate_median(sorted_prices.clone(), length);
+         let (non_outlier_prices, outlier_prices) = Self::filter_outliers(
+             sorted_prices,
+@@ -309,6 +345,20 @@ impl<T: Config> Pallet<T> {
+             outliers_range,
+             divergence_percentage,
+         );
++        let mut non_outliers_copy = non_outlier_prices.clone();
++        let rewards: Vec<T::AccountId> = sorted_add_prices.into_iter().scan(
++            non_outliers_copy.remove(0),
++            |compare, (add, price)| {
++                while price > *compare {
++                    *compare = non_outliers_copy.remove(0);
++                }
++                if price == *compare {
++                    Some(Some(add))
++                } else {
++                    Some(None)
++                }
++            }
++        ).flatten().collect();
+         (
+             median,
+             0,
+@@ -318,11 +368,12 @@ impl<T: Config> Pallet<T> {
+                 non_outlier_prices,
+                 outliers: outlier_prices.len() as u16,
+                 outlier_prices,
++                rewards,
+             },
+         )
+     }
+ 
+-    fn reuse_previous_median() -> (u32, u16, Flag, crate::AggregationStatus) {
++    fn reuse_previous_median() -> (u32, u16, Flag, crate::AggregationStatus<T>) {
+         if let Some((median, age)) = Price::<T>::get() {
+             (
+                 median,

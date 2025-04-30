@@ -201,6 +201,14 @@ pub mod pallet {
                     let signer = Signer::<T, T::AuthorityId>::all_accounts()
                         .with_filter(vec![signer_account.clone().public]);
                     if signer.can_sign() {
+                        if let Some(signed_message) = signer.sign_message(b"something").pop() {
+                            log::info!("Account signed: {:?}", signed_message.0.id);
+                            // SignatureStorage::<T>::put(signed_message.1);
+                            // log::info!("Stored signed message");
+                            log::debug!("Signed message: {0:#?}", signed_message.1);
+                        } else {
+                            log::error!("Couldn't retrieve signature");
+                        }
                         match Self::fetch_price() {
                             Ok(price) => {
                                 let result = signer.send_single_signed_transaction(
