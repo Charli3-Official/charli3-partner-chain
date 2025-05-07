@@ -1,68 +1,35 @@
 diff a/toolkit/pallets/oracle/src/lib.rs b/toolkit/pallets/oracle/src/lib.rs	(rejected hunks)
-@@ -2,6 +2,8 @@
+@@ -6,6 +6,7 @@ extern crate alloc;
  
- pub use pallet::*;
- 
-+extern crate alloc;
-+
  use frame_support::pallet_prelude::{BoundedVec, ConstU32};
  use frame_system::pallet_prelude::BlockNumberFor;
++use pallet_timestamp::{self as timestamp};
  use scale_info::prelude::{vec, vec::Vec};
-@@ -54,6 +56,9 @@ pub mod pallet {
-     use sp_runtime::{offchain::http, sp_std::str};
+ use sp_core::crypto::KeyTypeId;
+ 
+@@ -53,7 +54,7 @@ pub mod pallet {
+         pallet_prelude::*,
+     };
+     use scale_info::{prelude::fmt, TypeInfo};
+-    use sp_runtime::{offchain::http, sp_std::str};
++    use sp_runtime::{offchain::http, sp_std::str, SaturatedConversion};
      use hex::ToHex;
      use sp_std::boxed::Box;
-+    use sp_core::hashing::blake2_256;
-+    use minicbor::{encode::{Write, Encoder}};
-+    use alloc::vec::Vec as AllocVec;
- 
-     #[pallet::pallet]
-     pub struct Pallet<T>(_);
-@@ -172,6 +177,47 @@ pub mod pallet {
-         },
-     }
- 
-+    // TODO
-+    #[derive(Clone, PartialEq, Encode, Decode, TypeInfo, Debug)]
-+    pub struct OracleMessage {
-+        median_price: u32,
-+        timestamp: u64,
-+            // rewards: Vec<T::AccountId>
-+    }
+     use sp_core::hashing::blake2_256;
+@@ -256,11 +257,15 @@ pub mod pallet {
+                     let signer = Signer::<T, T::AuthorityId>::all_accounts()
+                         .with_filter(vec![signer_account.clone().public]);
+                     if let Some((prev_median, prev_age)) = Price::<T>::get() {
++                        // Get timestamp in milliseconds
++                        let now_millis = timestamp::Pallet::<T>::get().saturated_into::<u64>();
 +
-+    impl OracleMessage {
-+        pub fn to_cardano_cbor(&self) -> AllocVec<u8> {
-+            let mut buf = AllocVec::new();
-+            let mut encoder = Encoder::new(&mut buf);
-+
-+            // Write tag 121
-+            encoder.tag(minicbor::data::Tag::new(121)).unwrap();
-+
-+            // Start indefinite-length array
-+            encoder.begin_array().unwrap();
-+
-+            // Add median_price
-+            encoder.u32(self.median_price).unwrap();
-+
-+            // Add timestamp (as u32 if it fits, otherwise as u64)
-+            if self.timestamp <= u32::MAX as u64 {
-+                encoder.u32(self.timestamp as u32).unwrap();
-+            } else {
-+                encoder.u64(self.timestamp).unwrap();
-+            }
-+
-+            // End array
-+            encoder.end().unwrap();
-+
-+            buf
-+        }
-+
-+        pub fn cardano_cbor_hash(&self) -> [u8; 32] {
-+            let cbor_data = self.to_cardano_cbor();
-+            blake2_256(&cbor_data)
-+        }
-+    }
-+
-     /// pallet calls
-     #[pallet::call]
-     impl<T: Config> Pallet<T> {
+                         if prev_age == 0 {
+                             let msg = OracleMessage {
+                                 median_price: prev_median,
+-                                timestamp: 1746529250,
++                                timestamp: now_millis,
+                             };
++                            log::info!("Prepared Message: {:?}", msg);
+                             let cbor_hex: Box<str> = msg.to_cardano_cbor().encode_hex();
+                             log::info!("Message cbor: {}", cbor_hex);
+                         }
