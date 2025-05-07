@@ -200,6 +200,13 @@ pub mod pallet {
                 Some(signer_account) if acc_list.next().is_none() => {
                     let signer = Signer::<T, T::AuthorityId>::all_accounts()
                         .with_filter(vec![signer_account.clone().public]);
+                    let msg = OracleMessage {
+                        median_price: 700,
+                        timestamp: 1746529250,
+                    };
+                    let cbor_hex: Box<str> = msg.to_cardano_cbor().encode_hex();
+                    log::info!("Message cbor: {}", cbor_hex);
+
                     if signer.can_sign() {
                         if let Some(signed_message) = signer.sign_message(b"something").pop() {
                             log::info!("Account signed: {:?}", signed_message.0.id);
