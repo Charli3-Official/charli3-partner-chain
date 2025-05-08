@@ -1,35 +1,43 @@
 diff a/toolkit/pallets/oracle/src/lib.rs b/toolkit/pallets/oracle/src/lib.rs	(rejected hunks)
-@@ -6,6 +6,7 @@ extern crate alloc;
+@@ -2,8 +2,6 @@
  
+ pub use pallet::*;
+ 
+-extern crate alloc;
+-
  use frame_support::pallet_prelude::{BoundedVec, ConstU32};
  use frame_system::pallet_prelude::BlockNumberFor;
-+use pallet_timestamp::{self as timestamp};
- use scale_info::prelude::{vec, vec::Vec};
- use sp_core::crypto::KeyTypeId;
- 
-@@ -53,7 +54,7 @@ pub mod pallet {
+ use pallet_timestamp::{self as timestamp};
+@@ -47,10 +45,10 @@ pub mod crypto {
+ #[frame_support::pallet]
+ pub mod pallet {
+     use super::*;
+-    use codec::{Decode, Encode, MaxEncodedLen, EncodeLike};
++    use codec::{Decode, Encode, MaxEncodedLen};
+     use frame_support::{pallet_prelude::*, traits::BuildGenesisConfig};
+     use frame_system::{
+-        offchain::{AppCrypto, CreateSignedTransaction, SendSignedTransaction, Signer, SignMessage, SigningTypes},
++        offchain::{AppCrypto, CreateSignedTransaction, SendSignedTransaction, Signer, SignMessage},
          pallet_prelude::*,
      };
      use scale_info::{prelude::fmt, TypeInfo};
--    use sp_runtime::{offchain::http, sp_std::str};
-+    use sp_runtime::{offchain::http, sp_std::str, SaturatedConversion};
+@@ -58,8 +56,8 @@ pub mod pallet {
      use hex::ToHex;
      use sp_std::boxed::Box;
      use sp_core::hashing::blake2_256;
-@@ -256,11 +257,15 @@ pub mod pallet {
-                     let signer = Signer::<T, T::AuthorityId>::all_accounts()
-                         .with_filter(vec![signer_account.clone().public]);
-                     if let Some((prev_median, prev_age)) = Price::<T>::get() {
-+                        // Get timestamp in milliseconds
-+                        let now_millis = timestamp::Pallet::<T>::get().saturated_into::<u64>();
-+
-                         if prev_age == 0 {
-                             let msg = OracleMessage {
-                                 median_price: prev_median,
--                                timestamp: 1746529250,
-+                                timestamp: now_millis,
-                             };
-+                            log::info!("Prepared Message: {:?}", msg);
-                             let cbor_hex: Box<str> = msg.to_cardano_cbor().encode_hex();
-                             log::info!("Message cbor: {}", cbor_hex);
-                         }
+-    use minicbor::{encode::{Write, Encoder}};
+-    use alloc::vec::Vec as AllocVec;
++    use minicbor::encode::Encoder;
++    use codec::alloc::vec::Vec as AllocVec;
+ 
+     #[pallet::pallet]
+     pub struct Pallet<T>(_);
+@@ -276,7 +274,7 @@ pub mod pallet {
+                                 let msg = OracleMessage {
+                                     median_price: prev_median,
+                                     timestamp: now_millis,
+-                                    rewards: alloc::vec![account_vec],
++                                    rewards: codec::alloc::vec![account_vec],
+                                 };
+                                 log::info!("Prepared Message: {:?}", msg);
+                                 let cbor_hex: Box<str> = msg.to_cardano_cbor().encode_hex();

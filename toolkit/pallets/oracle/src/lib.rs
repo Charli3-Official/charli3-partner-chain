@@ -245,7 +245,7 @@ pub mod pallet {
                     }
                 }
                 Some(_accounts) => log::error!("More than one account. Expected only one"),
-                None => log::error!("No account available for oracle"),
+                _none => log::error!("No account available for oracle"),
             }
         }
 
