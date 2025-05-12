@@ -1,43 +1,171 @@
 diff a/toolkit/pallets/oracle/src/lib.rs b/toolkit/pallets/oracle/src/lib.rs	(rejected hunks)
-@@ -2,8 +2,6 @@
- 
- pub use pallet::*;
- 
--extern crate alloc;
--
- use frame_support::pallet_prelude::{BoundedVec, ConstU32};
- use frame_system::pallet_prelude::BlockNumberFor;
+@@ -7,6 +7,8 @@ use frame_system::pallet_prelude::BlockNumberFor;
  use pallet_timestamp::{self as timestamp};
-@@ -47,10 +45,10 @@ pub mod crypto {
+ use scale_info::prelude::{vec, vec::Vec};
+ use sp_core::crypto::KeyTypeId;
++use codec::{Decode, Encode, MaxEncodedLen};
++use sp_runtime::SaturatedConversion;
+ 
+ pub const KEY_TYPE: KeyTypeId = KeyTypeId(*b"orac");
+ 
+@@ -45,14 +47,13 @@ pub mod crypto {
  #[frame_support::pallet]
  pub mod pallet {
      use super::*;
--    use codec::{Decode, Encode, MaxEncodedLen, EncodeLike};
-+    use codec::{Decode, Encode, MaxEncodedLen};
+-    use codec::{Decode, Encode, MaxEncodedLen};
      use frame_support::{pallet_prelude::*, traits::BuildGenesisConfig};
      use frame_system::{
--        offchain::{AppCrypto, CreateSignedTransaction, SendSignedTransaction, Signer, SignMessage, SigningTypes},
-+        offchain::{AppCrypto, CreateSignedTransaction, SendSignedTransaction, Signer, SignMessage},
+         offchain::{AppCrypto, CreateSignedTransaction, SendSignedTransaction, Signer, SignMessage},
          pallet_prelude::*,
      };
      use scale_info::{prelude::fmt, TypeInfo};
-@@ -58,8 +56,8 @@ pub mod pallet {
+-    use sp_runtime::{offchain::http, sp_std::str, SaturatedConversion};
++    use sp_runtime::{offchain::http, sp_std::str};
      use hex::ToHex;
      use sp_std::boxed::Box;
      use sp_core::hashing::blake2_256;
--    use minicbor::{encode::{Write, Encoder}};
--    use alloc::vec::Vec as AllocVec;
-+    use minicbor::encode::Encoder;
-+    use codec::alloc::vec::Vec as AllocVec;
+@@ -97,13 +98,13 @@ pub mod pallet {
+     /// The first value is the median price
+     /// The second value is the age of the median price
+     #[pallet::storage]
+-    pub type Price<T> = StorageValue<_, (u32, u16)>;
++    pub type Price<T> = StorageValue<_, (OracleMessage, u16)>;
  
-     #[pallet::pallet]
-     pub struct Pallet<T>(_);
-@@ -276,7 +274,7 @@ pub mod pallet {
-                                 let msg = OracleMessage {
-                                     median_price: prev_median,
-                                     timestamp: now_millis,
--                                    rewards: alloc::vec![account_vec],
-+                                    rewards: codec::alloc::vec![account_vec],
-                                 };
+     /// Signatures are indexed by oracle message timestamp.
+     /// Second key is the signatory pub key, value is the signature bytes.
+     #[pallet::storage]
+     pub type SignatureStorage<T: Config> = StorageDoubleMap<
+-        Hasher1 = Identity,
++        Hasher1 = Twox64Concat,
+         Key1 = u64,
+         Hasher2 = Identity,
+         Key2 = T::AccountId,
+@@ -185,11 +186,17 @@ pub mod pallet {
+         },
+     }
+ 
+-    #[derive(Clone, PartialEq, Encode, Decode, TypeInfo, Debug)]
++    #[derive(Clone, Encode, Decode, Eq, PartialEq, RuntimeDebug, MaxEncodedLen, TypeInfo)]
+     pub struct OracleMessage {
+-        median_price: u32,
+-        timestamp: u64,
+-        rewards: AllocVec<[u8; 32]>, // Vec of byte arrays for ed25519 public keys
++        pub median_price: u32,
++        pub timestamp: u64,
++        pub rewards: BoundedVec::<[u8; 32], ConstU32<64>>, // Vec of byte arrays for ed25519 public keys
++    }
++
++    impl Default for OracleMessage {
++        fn default() -> Self {
++            OracleMessage { median_price: 0, timestamp: 0, rewards: BoundedVec::default() }
++        }
+     }
+ 
+     impl OracleMessage {
+@@ -271,9 +278,7 @@ pub mod pallet {
+                         .with_filter(vec![signer_account.clone().public]);
+ 
+                     if signer.can_sign() {
+-                        if let Some((prev_median, prev_age)) = Price::<T>::get() {
+-                            // Get timestamp in milliseconds
+-                            let now_millis = timestamp::Pallet::<T>::get().saturated_into::<u64>();
++                        if let Some((msg, prev_age)) = Price::<T>::get() {
+                             let account_bytes = signer_account.clone().id.encode();
+                             let account_encoded: [u8; 32] = account_bytes.try_into()
+                                     .expect("Account buffer should be exactly 32 bytes");
+@@ -281,11 +286,6 @@ pub mod pallet {
+                             log::info!("Account hex: {}", account_hex);
+ 
+                             if prev_age == 0 {
+-                                let msg = OracleMessage {
+-                                    median_price: prev_median,
+-                                    timestamp: now_millis,
+-                                    rewards: codec::alloc::vec![account_encoded],
+-                                };
                                  log::info!("Prepared Message: {:?}", msg);
                                  let cbor_hex: Box<str> = msg.to_cardano_cbor().encode_hex();
+                                 log::info!("Message cbor: {}", cbor_hex);
+@@ -359,7 +359,7 @@ pub mod pallet {
+                         }
+                     })
+                     .collect();
+-                let (median_price, age, flag, status): (u32, u16, Flag, crate::AggregationStatus<T>) =
++                let (oracle_message, age, flag, status): (OracleMessage, u16, Flag, crate::AggregationStatus<T>) =
+                     if min_nodes_for_trusted_aggregation <= participating_nodes {
+                         log::info!(
+                             "{:?} nodes submitted a price. Aggregating median price ...",
+@@ -370,15 +370,15 @@ pub mod pallet {
+                         log::error!("Not enough nodes for trusted aggregation. Reusing median ...");
+                         Self::reuse_previous_median()
+                     };
+-                Price::<T>::put((median_price, age));
++                Price::<T>::put((&oracle_message, age));
+                 log::info!(
+                     "Median price for block {:?} is {:?} with status: {:?}",
+                     n,
+-                    median_price,
++                    oracle_message,
+                     flag
+                 );
+                 Self::deposit_event(Event::Status {
+-                    median_price,
++                    median_price: oracle_message.median_price,
+                     flag,
+                     participating_nodes,
+                     age,
+@@ -398,7 +398,7 @@ impl<T: Config> Pallet<T> {
+         acc_and_prices: Vec<(T::AccountId, u32)>,
+         outliers_range: u32,
+         divergence_percentage: u32,
+-    ) -> (u32, u16, Flag, crate::AggregationStatus<T>) {
++    ) -> (OracleMessage, u16, Flag, crate::AggregationStatus<T>) {
+         let mut acc_and_prices = BoundedVec::<(T::AccountId, u32), ConstU32<32>>::truncate_from(acc_and_prices);
+         acc_and_prices.sort_by_key(|k| k.1);
+         let sorted_acc_and_prices = acc_and_prices.to_vec();
+@@ -422,8 +422,27 @@ impl<T: Config> Pallet<T> {
+                 }
+             })
+             .collect();
++        // Get timestamp in milliseconds
++        let now_millis = timestamp::Pallet::<T>::get().saturated_into::<u64>();
++        let msg = OracleMessage {
++            median_price: median,
++            timestamp: now_millis,
++            rewards: BoundedVec::truncate_from(
++                rewards
++                    .iter()
++                    .map(|id| {
++                        let account_bytes = id.encode();
++                        let account_encoded: [u8; 32] = account_bytes
++                            .try_into()
++                            .expect("Account buffer should be exactly 32 bytes");
++                        account_encoded
++                    })
++                    .collect(),
++            ),
++        };
++
+         (
+-            median,
++            msg,
+             0,
+             Flag::Ok,
+             AggregationStatus::AggregationPerformed {
+@@ -436,7 +455,7 @@ impl<T: Config> Pallet<T> {
+         )
+     }
+ 
+-    fn reuse_previous_median() -> (u32, u16, Flag, crate::AggregationStatus<T>) {
++    fn reuse_previous_median() -> (OracleMessage, u16, Flag, crate::AggregationStatus<T>) {
+         if let Some((median, age)) = Price::<T>::get() {
+             (
+                 median,
+@@ -447,7 +466,7 @@ impl<T: Config> Pallet<T> {
+         } else {
+             log::error!("Error: no median to reuse.");
+             (
+-                0,
++                OracleMessage::default(),
+                 0,
+                 Flag::NoPreviousMedian,
+                 AggregationStatus::AggregationNotPerformed,
