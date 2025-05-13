@@ -168,17 +168,43 @@ pub mod pallet {
     impl<T: Config> Pallet<T> {
         #[pallet::call_index(0)]
         #[pallet::weight((0, Pays::No))]
-        pub fn store_price(origin: OriginFor<T>, price: u32) -> DispatchResult {
+        pub fn store_price_and_signature(
+            origin: OriginFor<T>,
+            price: Option<u32>,
+            signed_msg: Option<(OracleMessage, T::Signature)>,
+        ) -> DispatchResult {
             let who = ensure_signed(origin)?;
             let when = <frame_system::Pallet<T>>::block_number();
-            NodesPrices::<T>::insert(&who, (price, when));
-            Self::deposit_event(Event::StoredPrice {
-                price,
-                who: who.clone(),
-                when,
-            });
+
+            if let Some(price) = price {
+                NodesPrices::<T>::insert(&who, (price, when));
+
+                Self::deposit_event(Event::StoredPrice {
+                    price,
+                    who: who.clone(),
+                    when,
+                });
+            }
+
+            if let Some((message, signature)) = signed_msg {
+                let mut signature_bytes: AllocVec<u8> = signature.encode();
+                signature_bytes.remove(0);
+                let signature_encoded: [u8; 64] = signature_bytes
+                    .try_into()
+                    .expect("signature buffer should be exactly 64 bytes");
+                SignatureStorage::<T>::insert(message.timestamp, &who, signature_encoded);
+
+                Self::deposit_event(Event::StoredSignature {
+                    message,
+                    who,
+                    when,
+                    signature,
+                });
+            }
+
             Ok(())
         }
+
     }
 
     /// pallet auxiliary methods
