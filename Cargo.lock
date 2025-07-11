@@ -6238,7 +6238,6 @@ dependencies = [
  "scale-info",
  "serde",
  "serde_json",
- "sidechain-domain",
  "sp-core",
  "sp-io",
  "sp-runtime",

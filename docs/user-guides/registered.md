@@ -268,8 +268,6 @@ Now the wizard will output `partner-chains-public-keys.json` containing three ke
 }
 ```
 
-After getting the keys, contact the chain builder and provide them with your AURA key, and you also have to provide a Cardano address that will be the one that receives rewards in case that the node is elegible for them.
-
 ### 4. Obtain chain parameters
 
 Obtaining the chain parameters needs to be done manually.

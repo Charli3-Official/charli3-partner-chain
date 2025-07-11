@@ -5,7 +5,6 @@ use sidechain_runtime::{
 	OracleConfig, RuntimeGenesisConfig, SessionCommitteeManagementConfig, SessionConfig,
 	SidechainConfig, SudoConfig, SystemConfig,
 };
-use sidechain_domain::{MainchainAddress};
 use std::str::FromStr;
 
 /// Produces template chain spec for Partner Chains.
@@ -13,18 +12,15 @@ use std::str::FromStr;
 /// `initial_validators` fields should be updated by the `partner-chains-cli chain-spec`.
 /// Add and modify other fields of `ChainSpec` accordingly to the needs of your chain.
 pub fn chain_spec() -> Result<ChainSpec, envy::Error> {
-	// complete here with the corresponding keys and addresses
-	let sr25519_key_and_mainchain_addresses: Vec<(&str,  &str)> = [
-		// ("0x...", "stake_test...")
-	].to_vec();
-	let accounts_and_mainchain_addresses: Vec<(AccountId, MainchainAddress)> = sr25519_key_and_mainchain_addresses.iter().cloned().map(
-		|(sr25519_key, mc_address)| (AccountId::from_str(sr25519_key).unwrap(), MainchainAddress::from_str(mc_address).unwrap())
-	).collect();
+	let endowed_accounts: Vec<AccountId> =
+		[AccountId::from_str("0xd43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d")
+			.unwrap()]
+		.to_vec();
 	let runtime_genesis_config = RuntimeGenesisConfig {
 		system: SystemConfig { ..Default::default() },
 		balances: BalancesConfig {
 			// Update if any endowed accounts are required.
-			balances: accounts_and_mainchain_addresses.iter().cloned().map(|(k, _)| (k, 0)).collect(),
+			balances: endowed_accounts.iter().cloned().map(|k| (k, 1 << 60)).collect(),
 		},
 		aura: AuraConfig { authorities: vec![] },
 		grandpa: GrandpaConfig { authorities: vec![], ..Default::default() },
@@ -56,7 +52,6 @@ pub fn chain_spec() -> Result<ChainSpec, envy::Error> {
 			feed_age: 15,
 			outliers_range: 2,
 			divergence_percentage: 15,
-			orac_key_to_mainchain_address: accounts_and_mainchain_addresses,
 			..Default::default()
 		},
 	};

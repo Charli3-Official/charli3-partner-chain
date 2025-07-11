@@ -164,9 +164,9 @@ Now the wizard will output `partner-chains-public-keys.json` containing three ke
 
 ### 4. Share keys with the chain builder
 
-In this step, the `partner-chains-cli-public-keys.json` file needs to be shared with the chain builder so that the permissioned validator can be whitelisted, a Cardano address needs to be provided too, this address will be the recipient of rewards in case the node is elegible for them. 
+In this step, the `partner-chains-cli-public-keys.json` file needs to be shared with the chain builder so that the permissioned validator can be whitelisted.
 
-Contact the chain builder and provide the `partner-chains-cli-public-keys.json` file, and a Cardano address.
+Contact the chain builder and provide the `partner-chains-cli-public-keys.json` file.
 
 ### 5. Obtain the chain configuration and specification files
 
