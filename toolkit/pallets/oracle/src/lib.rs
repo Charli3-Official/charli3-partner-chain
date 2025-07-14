@@ -16,28 +16,28 @@ pub const SCALING_FACTOR: f64 = 10000.0;
 
 pub mod crypto {
 	use crate::KEY_TYPE;
-	use sp_core::sr25519::Signature as Sr25519Signature;
+	use sp_core::ed25519::Signature as Ed25519Signature;
 	use sp_runtime::{
-		app_crypto::{app_crypto, sr25519},
+		app_crypto::{app_crypto, ed25519},
 		traits::Verify,
 		MultiSignature, MultiSigner,
 	};
-	app_crypto!(sr25519, KEY_TYPE);
+	app_crypto!(ed25519, KEY_TYPE);
 
 	pub struct OracleAuthId;
 
 	impl frame_system::offchain::AppCrypto<MultiSigner, MultiSignature> for OracleAuthId {
 		type RuntimeAppPublic = Public;
-		type GenericSignature = sp_core::sr25519::Signature;
-		type GenericPublic = sp_core::sr25519::Public;
+		type GenericSignature = sp_core::ed25519::Signature;
+		type GenericPublic = sp_core::ed25519::Public;
 	}
 
-	impl frame_system::offchain::AppCrypto<<Sr25519Signature as Verify>::Signer, Sr25519Signature>
+	impl frame_system::offchain::AppCrypto<<Ed25519Signature as Verify>::Signer, Ed25519Signature>
 		for OracleAuthId
 	{
 		type RuntimeAppPublic = Public;
-		type GenericSignature = sp_core::sr25519::Signature;
-		type GenericPublic = sp_core::sr25519::Public;
+		type GenericSignature = sp_core::ed25519::Signature;
+		type GenericPublic = sp_core::ed25519::Public;
 	}
 }
 

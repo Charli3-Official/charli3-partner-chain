@@ -45,7 +45,7 @@ There are two types of nodes, first is [chain-builder](https://github.com/txpipe
 1. generate-keys for every permissioned node including chain-builder, this is "2. Run the generate-keys wizard" step from the two guides above.
 You should copy the contents `partner-chains-public-keys.json` files for each node, to then register them as `initial_permissioned_candidates` inside `partner-chains-cli-chain-config.json` file.
 
-2. setup chain builder - steps 3-6 from the [guide](https://github.com/txpipe-shop/charli3-substrate-partner-chains/blob/main/docs/user-guides/chain-builder.md#3-rebuild-with-the-list-of-sr25519-keys-and-cardano-addresses).
+2. setup chain builder - steps 3-6 from the [guide](https://github.com/txpipe-shop/charli3-substrate-partner-chains/blob/main/docs/user-guides/chain-builder.md#3-rebuild-with-the-list-of-ed25519-keys-and-cardano-addresses).
 You should use `partner-chains-public-keys.json` and `partner-chains-phrases-backup.json` files generated at previous step for substrate-side keys entry, while for payment keys you can use `payment.short.addr`, `payment.skey`, `payment.vkey` files inside `dev/configurations/partner-chains-nodes/partner-chains-node-ix/keys/` folder.
 
 3. distribute configurations - [step 5](https://github.com/txpipe-shop/charli3-substrate-partner-chains/blob/main/docs/user-guides/permissioned.md#5-obtain-the-chain-configuration-and-specification-files).
@@ -54,4 +54,4 @@ You should use `partner-chains-public-keys.json` and `partner-chains-phrases-bac
 
 5. [register](https://github.com/txpipe-shop/charli3-substrate-partner-chains/blob/main/docs/user-guides/oracle-usage.md) all nodes as oracles.
 You should connect to corresponding rpc port, which is logged when node is first booted (e.g. `Running JSON-RPC server: addr=127.0.0.1:9944,[::1]:9944`).
-After that corresponding node logs should periodically produce "submit transaction success" with their own aura sr25519 pub key.
+After that corresponding node logs should periodically produce "submit transaction success" with their own aura ed25519 pub key.

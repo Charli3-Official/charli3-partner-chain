@@ -21,7 +21,7 @@ use parity_scale_codec::{Decode, Encode, MaxEncodedLen};
 use plutus::{Datum, ToDatum};
 use plutus_datum_derive::*;
 use scale_info::TypeInfo;
-use sp_core::{bounded::BoundedVec, ecdsa, ed25519, sr25519, ConstU32};
+use sp_core::{bounded::BoundedVec, ecdsa, ed25519, ConstU32};
 #[cfg(feature = "serde")]
 use {
 	derive_more::FromStr,
@@ -634,13 +634,13 @@ impl SidechainPublicKeysSorted {
 #[byte_string(debug, hex_serialize, hex_deserialize, decode_hex)]
 pub struct AuraPublicKey(pub Vec<u8>);
 impl AuraPublicKey {
-	pub fn try_into_sr25519(&self) -> Option<sr25519::Public> {
-		Some(sr25519::Public::from_raw(self.0.clone().try_into().ok()?))
+	pub fn try_into_ed25519(&self) -> Option<ed25519::Public> {
+		Some(ed25519::Public::from_raw(self.0.clone().try_into().ok()?))
 	}
 }
 
-impl From<sr25519::Public> for AuraPublicKey {
-	fn from(value: sr25519::Public) -> Self {
+impl From<ed25519::Public> for AuraPublicKey {
+	fn from(value: ed25519::Public) -> Self {
 		Self(value.0.to_vec())
 	}
 }

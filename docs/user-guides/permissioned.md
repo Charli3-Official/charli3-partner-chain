@@ -146,7 +146,7 @@ The generate-keys wizard will generate necessary keys and save them to your node
 
 1. ECDSA cross-chain key
 2. ED25519 Grandpa key
-3. SR25519 Aura key
+3. ED25519 Aura key
 
 If these keys already exist in the node’s keystore, you will be asked to overwrite existing keys. The wizard will also generate a network key for your node if needed.
 

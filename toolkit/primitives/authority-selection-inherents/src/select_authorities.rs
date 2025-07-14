@@ -10,7 +10,7 @@ use log::{info, warn};
 use plutus::*;
 use selection::{Weight, WeightedRandomSelectionConfig};
 use sidechain_domain::{DParameter, ScEpochNumber, UtxoId};
-use sp_core::{ecdsa, ed25519, sr25519, Get};
+use sp_core::{ecdsa, ed25519, Get};
 
 type CandidateWithWeight<A, B> = (Candidate<A, B>, Weight);
 
@@ -34,7 +34,7 @@ type CandidateWithWeight<A, B> = (Candidate<A, B>, Weight);
 ///   * otherwise, the weight is `P * W`
 pub fn select_authorities<
 	TAccountId: Clone + Ord + TryFrom<sidechain_domain::SidechainPublicKey> + From<ecdsa::Public>,
-	TAccountKeys: Clone + From<(sr25519::Public, ed25519::Public)>,
+	TAccountKeys: Clone + From<(ed25519::Public, ed25519::Public)>,
 	MaxValidators: Get<u32>,
 >(
 	genesis_utxo: UtxoId,

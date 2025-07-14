@@ -7,7 +7,7 @@ use plutus_datum_derive::ToDatum;
 #[cfg(feature = "std")]
 use serde::{Deserialize, Serialize};
 use sidechain_domain::*;
-use sp_core::{ecdsa, ed25519, sr25519};
+use sp_core::{ecdsa, ed25519};
 use sp_runtime::traits::Verify;
 
 /// Signed Message of the Authority Candidate to register
@@ -40,7 +40,7 @@ pub fn filter_trustless_candidates_registrations<TAccountId, TAccountKeys>(
 	genesis_utxo: UtxoId,
 ) -> Vec<CandidateWithStake<TAccountId, TAccountKeys>>
 where
-	TAccountKeys: From<(sr25519::Public, ed25519::Public)>,
+	TAccountKeys: From<(ed25519::Public, ed25519::Public)>,
 	TAccountId: From<ecdsa::Public>,
 {
 	candidate_registrations
@@ -55,7 +55,7 @@ pub fn filter_invalid_permissioned_candidates<TAccountId, TAccountKeys>(
 	permissioned_candidates: Vec<PermissionedCandidateData>,
 ) -> Vec<Candidate<TAccountId, TAccountKeys>>
 where
-	TAccountKeys: From<(sr25519::Public, ed25519::Public)>,
+	TAccountKeys: From<(ed25519::Public, ed25519::Public)>,
 	TAccountId: TryFrom<sidechain_domain::SidechainPublicKey>,
 {
 	permissioned_candidates
@@ -75,7 +75,7 @@ fn select_latest_valid_candidate<TAccountId, TAccountKeys>(
 ) -> Option<CandidateWithStake<TAccountId, TAccountKeys>>
 where
 	TAccountId: From<ecdsa::Public>,
-	TAccountKeys: From<(sr25519::Public, ed25519::Public)>,
+	TAccountKeys: From<(ed25519::Public, ed25519::Public)>,
 {
 	let stake_delegation = validate_stake(candidate_registrations.stake_delegation).ok()?;
 	let mainchain_pub_key = candidate_registrations.mainchain_pub_key;
@@ -148,7 +148,7 @@ pub enum PermissionedCandidateDataError {
 
 pub fn validate_permissioned_candidate_data<AccountId: TryFrom<SidechainPublicKey>>(
 	candidate: PermissionedCandidateData,
-) -> Result<(AccountId, sr25519::Public, ed25519::Public), PermissionedCandidateDataError> {
+) -> Result<(AccountId, ed25519::Public, ed25519::Public), PermissionedCandidateDataError> {
 	Ok((
 		candidate
 			.sidechain_public_key
@@ -156,7 +156,7 @@ pub fn validate_permissioned_candidate_data<AccountId: TryFrom<SidechainPublicKe
 			.map_err(|_| PermissionedCandidateDataError::InvalidSidechainPubKey)?,
 		candidate
 			.aura_public_key
-			.try_into_sr25519()
+			.try_into_ed25519()
 			.ok_or(PermissionedCandidateDataError::InvalidAuraKey)?,
 		candidate
 			.grandpa_public_key
@@ -170,10 +170,10 @@ pub fn validate_registration_data(
 	mainchain_pub_key: &MainchainPublicKey,
 	registration_data: &RegistrationData,
 	genesis_utxo: UtxoId,
-) -> Result<Candidate<ecdsa::Public, (sr25519::Public, ed25519::Public)>, RegistrationDataError> {
+) -> Result<Candidate<ecdsa::Public, (ed25519::Public, ed25519::Public)>, RegistrationDataError> {
 	let aura_pub_key = registration_data
 		.aura_pub_key
-		.try_into_sr25519()
+		.try_into_ed25519()
 		.ok_or(RegistrationDataError::InvalidAuraKey)?;
 	let grandpa_pub_key = registration_data
 		.grandpa_pub_key
@@ -572,7 +572,7 @@ mod tests {
 		assert_eq!(
 			valid_candidates.first().unwrap().account_keys,
 			(
-				valid_candidate.aura_public_key.try_into_sr25519().unwrap(),
+				valid_candidate.aura_public_key.try_into_ed25519().unwrap(),
 				valid_candidate.grandpa_public_key.try_into_ed25519().unwrap()
 			)
 				.into()

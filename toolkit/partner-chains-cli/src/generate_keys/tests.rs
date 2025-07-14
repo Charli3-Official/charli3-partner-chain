@@ -36,7 +36,7 @@ pub mod scenarios {
 			MockIO::eprint("This 🧙 wizard will generate the following keys and save them to your node's keystore:"),
 			MockIO::eprint("→  an ECDSA Cross-chain key"),
 			MockIO::eprint("→  an ED25519 Grandpa key"),
-			MockIO::eprint("→  an SR25519 Aura key"),
+			MockIO::eprint("→  an ED25519 Aura key"),
 			MockIO::eprint("It will also generate a network key for your node if needed.")
 		])
 	}
@@ -87,11 +87,11 @@ pub mod scenarios {
 			MockIO::enewline(),
 
 			MockIO::list_dir(&keystore_path(), None),
-			MockIO::eprint("⚙️ Generating Aura (sr25519) key"),
-			MockIO::run_command_json(&format!("{EXECUTABLE_PATH} key generate --scheme sr25519 --output-type json"),
+			MockIO::eprint("⚙️ Generating Aura (ed25519) key"),
+			MockIO::run_command_json(&format!("{EXECUTABLE_PATH} key generate --scheme ed25519 --output-type json"),
 				&serde_json::json!({"publicKey": aura_key, "secretPhrase": "aura secret phrase"})),
-			MockIO::eprint("💾 Inserting Aura (sr25519) key"),
-			MockIO::run_command(&format!("{EXECUTABLE_PATH} key insert --base-path {DATA_PATH} --scheme sr25519 --key-type aura --suri 'aura secret phrase'"), ""),
+			MockIO::eprint("💾 Inserting Aura (ed25519) key"),
+			MockIO::run_command(&format!("{EXECUTABLE_PATH} key insert --base-path {DATA_PATH} --scheme ed25519 --key-type aura --suri 'aura secret phrase'"), ""),
 			MockIO::eprint(&format!("💾 Aura key stored at {}/{AURA_PREFIX}{aura_key}", &keystore_path())),
 			MockIO::enewline(),
 		])

@@ -7,7 +7,7 @@ use anyhow::{anyhow, Context};
 use serde::de::DeserializeOwned;
 use serde_json::Value as JValue;
 use sidechain_domain::UtxoId;
-use sp_core::{sr25519, ed25519};
+use sp_core::{ed25519};
 
 #[cfg(test)]
 mod tests;
@@ -15,7 +15,7 @@ mod tests;
 #[derive(Debug, clap::Parser)]
 pub struct CreateChainSpecCmd;
 
-type SessionKeys = (sr25519::Public, ed25519::Public);
+type SessionKeys = (ed25519::Public, ed25519::Public);
 
 const SESSION_INITIAL_VALIDATORS_PATH: &str =
 	"/genesis/runtimeGenesis/config/session/initialValidators";

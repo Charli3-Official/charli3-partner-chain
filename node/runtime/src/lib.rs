@@ -43,7 +43,7 @@ use sidechain_domain::{
 	ScEpochNumber, ScSlotNumber, StakeDelegation,
 };
 use sp_api::impl_runtime_apis;
-use sp_consensus_aura::sr25519::AuthorityId as AuraId;
+use sp_consensus_aura::ed25519::AuthorityId as AuraId;
 use sp_core::{crypto::KeyTypeId, OpaqueMetadata};
 #[cfg(any(feature = "std", test))]
 pub use sp_runtime::BuildStorage;
@@ -106,7 +106,7 @@ type DbWeight = RocksDbWeight;
 pub mod opaque {
 	use super::*;
 	use parity_scale_codec::MaxEncodedLen;
-	use sp_core::{ed25519, sr25519};
+	use sp_core::{ed25519};
 	pub use sp_runtime::OpaqueExtrinsic as UncheckedExtrinsic;
 
 	/// Opaque block header type.
@@ -171,8 +171,8 @@ pub mod opaque {
 			pub grandpa: Grandpa,
 		}
 	}
-	impl From<(sr25519::Public, ed25519::Public)> for SessionKeys {
-		fn from((aura, grandpa): (sr25519::Public, ed25519::Public)) -> Self {
+	impl From<(ed25519::Public, ed25519::Public)> for SessionKeys {
+		fn from((aura, grandpa): (ed25519::Public, ed25519::Public)) -> Self {
 			Self { aura: aura.into(), grandpa: grandpa.into() }
 		}
 	}

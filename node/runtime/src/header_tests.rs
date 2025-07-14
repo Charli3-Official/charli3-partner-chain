@@ -2,8 +2,8 @@ mod header_verification {
 	use crate::Header;
 	use hex_literal::hex;
 	use parity_scale_codec::Encode;
-	use sp_consensus_aura::sr25519::AuthorityId as AuraId;
-	use sp_consensus_aura::sr25519::AuthoritySignature as AuraSignature;
+	use sp_consensus_aura::ed25519::AuthorityId as AuraId;
+	use sp_consensus_aura::ed25519::AuthoritySignature as AuraSignature;
 	use sp_core::crypto::Ss58Codec;
 	use sp_core::H256;
 	use sp_runtime::traits::{BlakeTwo256, Hash};
