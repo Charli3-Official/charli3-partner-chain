@@ -419,17 +419,11 @@ impl<T: Config> Pallet<T> {
 			BoundedVec::<(T::AccountId, u32), ConstU32<32>>::truncate_from(acc_and_prices);
 		acc_and_prices.sort_by_key(|k| k.1);
 		let sorted_acc_and_prices = acc_and_prices.to_vec();
-		let length: usize = acc_and_prices.len();
 		let (_addresses, sorted_prices): (Vec<T::AccountId>, Vec<u32>) =
 			sorted_acc_and_prices.clone().into_iter().unzip();
-		let median = Self::calculate_median(sorted_prices.clone(), length);
-		let (non_outlier_prices, outlier_prices) = Self::filter_outliers(
-			sorted_prices,
-			median,
-			length,
-			outliers_range,
-			divergence_percentage,
-		);
+		let median = Self::calculate_median(sorted_prices.clone());
+		let (non_outlier_prices, outlier_prices) =
+			Self::filter_outliers(sorted_prices, median, outliers_range, divergence_percentage);
 		let rewards: Vec<T::AccountId> = sorted_acc_and_prices
 			.into_iter()
 			.filter_map(
@@ -489,11 +483,17 @@ impl<T: Config> Pallet<T> {
 		}
 	}
 
-	fn calculate_median(prices: Vec<u32>, length: usize) -> u32 {
-		if length % 2 == 0 {
-			prices[(length - 1) / 2]
+	fn calculate_median(prices: Vec<u32>) -> u32 {
+		let length: usize = prices.len();
+
+		if length % 2 == 1 {
+			// Odd length: return the middle element
+			prices[length / 2]
 		} else {
-			(prices[(length - 1) / 2] + prices[length / 2]) / 2
+			// Even length: average of the two middle elements
+			let mid1 = prices[length / 2 - 1];
+			let mid2 = prices[length / 2];
+			(mid1 + mid2) / 2
 		}
 	}
 
@@ -524,18 +524,19 @@ impl<T: Config> Pallet<T> {
 	fn filter_outliers(
 		prices: Vec<u32>,
 		median: u32,
-		length: usize,
 		outliers_range: u32,
 		divergence: u32,
 	) -> (Vec<u32>, Vec<u32>) {
-		let first_quartile = Self::calculate_median(
-			prices.clone().into_iter().take(length / 2).collect(),
-			length / 2,
-		);
-		let third_quartile = Self::calculate_median(
-			prices.clone().into_iter().skip(length / 2).collect(),
-			length / 2,
-		);
+		let length: usize = prices.len();
+
+		if length == 1 {
+			return (prices, Vec::new());
+		}
+
+		let first_quartile =
+			Self::calculate_median(prices.clone().into_iter().take(length / 2).collect());
+		let third_quartile =
+			Self::calculate_median(prices.clone().into_iter().skip(length / 2).collect());
 
 		let interquartile_range = third_quartile - first_quartile;
 
