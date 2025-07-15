@@ -12,15 +12,19 @@ use std::str::FromStr;
 /// `initial_validators` fields should be updated by the `partner-chains-cli chain-spec`.
 /// Add and modify other fields of `ChainSpec` accordingly to the needs of your chain.
 pub fn chain_spec() -> Result<ChainSpec, envy::Error> {
-	let endowed_accounts: Vec<AccountId> =
-		[AccountId::from_str("0xd43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d")
-			.unwrap()]
-		.to_vec();
+	// complete here with the corresponding keys
+	let endowed_accounts: Vec<AccountId> = [
+		AccountId::from_str("0xd43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d")
+			.unwrap(),
+		AccountId::from_str("0xac1d6fb8dd38138a2167493fecb2b5d49bb8a087a9956a53e0357eedb857f658")
+			.unwrap(),
+	]
+	.to_vec();
 	let runtime_genesis_config = RuntimeGenesisConfig {
 		system: SystemConfig { ..Default::default() },
 		balances: BalancesConfig {
 			// Update if any endowed accounts are required.
-			balances: endowed_accounts.iter().cloned().map(|k| (k, 1 << 60)).collect(),
+			balances: endowed_accounts.iter().cloned().map(|k| (k, 0)).collect(),
 		},
 		aura: AuraConfig { authorities: vec![] },
 		grandpa: GrandpaConfig { authorities: vec![], ..Default::default() },
