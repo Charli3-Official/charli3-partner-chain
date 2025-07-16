@@ -7,12 +7,15 @@ use anyhow::{anyhow, Context};
 use serde::de::DeserializeOwned;
 use serde_json::Value as JValue;
 use sidechain_domain::UtxoId;
+use sp_core::{ed25519};
 
 #[cfg(test)]
 mod tests;
 
 #[derive(Debug, clap::Parser)]
 pub struct CreateChainSpecCmd;
+
+type SessionKeys = (ed25519::Public, ed25519::Public);
 
 const SESSION_INITIAL_VALIDATORS_PATH: &str =
 	"/genesis/runtimeGenesis/config/session/initialValidators";
@@ -114,7 +117,7 @@ impl CreateChainSpecCmd {
 		let initial_validators = config
 			.initial_permissioned_candidates_parsed
 			.iter()
-			.map(|c| serde_json::to_value((c.account_id_32(), c.session_keys())))
+			.map(|c| serde_json::to_value((c.account_id_32(), c.session_keys::<SessionKeys>())))
 			.collect::<Result<Vec<serde_json::Value>, _>>()?;
 		let initial_validators = serde_json::Value::Array(initial_validators);
 		Self::update_field(&mut chain_spec, SESSION_INITIAL_VALIDATORS_PATH, initial_validators)?;
@@ -122,7 +125,7 @@ impl CreateChainSpecCmd {
 		let initial_authorities = config
 			.initial_permissioned_candidates_parsed
 			.iter()
-			.map(|c| serde_json::to_value((c.sidechain, c.session_keys())))
+			.map(|c| serde_json::to_value((c.sidechain, c.session_keys::<SessionKeys>())))
 			.collect::<Result<Vec<serde_json::Value>, _>>()?;
 		let initial_authorities = serde_json::Value::Array(initial_authorities);
 		Self::update_field(

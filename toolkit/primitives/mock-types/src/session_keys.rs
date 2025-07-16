@@ -1,7 +1,7 @@
 use frame_support::{Deserialize, Serialize};
 use parity_scale_codec::{Decode, Encode, MaxEncodedLen};
 use scale_info::TypeInfo;
-use sp_core::{ed25519, sr25519};
+use sp_core::{ed25519};
 
 #[derive(
 	Clone,
@@ -22,8 +22,8 @@ pub struct SessionKeys {
 	pub grandpa: [u8; 32],
 }
 
-impl From<(sr25519::Public, ed25519::Public)> for SessionKeys {
-	fn from((aura, grandpa): (sr25519::Public, ed25519::Public)) -> Self {
+impl From<(ed25519::Public, ed25519::Public)> for SessionKeys {
+	fn from((aura, grandpa): (ed25519::Public, ed25519::Public)) -> Self {
 		Self { aura: aura.0, grandpa: grandpa.0 }
 	}
 }

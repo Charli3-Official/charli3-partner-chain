@@ -381,10 +381,10 @@ mod tests {
 	use sp_application_crypto::{key_types::AURA, AppCrypto};
 	use sp_consensus::{DisableProofRecording, NoNetwork as DummyOracle, Proposal};
 	use sp_consensus_aura::inherents::InherentDataProvider;
-	use sp_consensus_aura::sr25519::AuthorityPair;
+	use sp_consensus_aura::ed25519::AuthorityPair;
 	use sp_consensus_aura::SlotDuration;
 	use sp_inherents::InherentData;
-	use sp_keyring::sr25519::Keyring;
+	use sp_keyring::ed25519::Keyring;
 	use sp_keystore::Keystore;
 	use sp_partner_chains_consensus_aura::CurrentSlotProvider;
 	use sp_runtime::{
@@ -548,7 +548,7 @@ mod tests {
 			);
 
 			keystore
-				.sr25519_generate_new(AURA, Some(&key.to_seed()))
+				.ed25519_generate_new(AURA, Some(&key.to_seed()))
 				.expect("Creates authority key");
 			keystore_paths.push(keystore_path);
 
@@ -618,7 +618,7 @@ mod tests {
 		let keystore_path = tempfile::tempdir().expect("Creates keystore path");
 		let keystore = LocalKeystore::open(keystore_path.path(), None).expect("Creates keystore.");
 		let public = keystore
-			.sr25519_generate_new(AuthorityPair::ID, None)
+			.ed25519_generate_new(AuthorityPair::ID, None)
 			.expect("Key should be created");
 		authorities.push(public.into());
 
@@ -669,7 +669,7 @@ mod tests {
 		let keystore_path = tempfile::tempdir().expect("Creates keystore path");
 		let keystore = LocalKeystore::open(keystore_path.path(), None).expect("Creates keystore.");
 		keystore
-			.sr25519_generate_new(AuthorityPair::ID, Some(&Keyring::Alice.to_seed()))
+			.ed25519_generate_new(AuthorityPair::ID, Some(&Keyring::Alice.to_seed()))
 			.expect("Key should be created");
 
 		let net = Arc::new(Mutex::new(net));

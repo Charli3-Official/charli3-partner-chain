@@ -146,7 +146,7 @@ The generate-keys wizard will generate necessary keys and save them to your node
 
 1. ECDSA cross-chain key
 2. ED25519 Grandpa key
-3. SR25519 Aura key
+3. ED25519 Aura key
 
 If these keys already exist in the node’s keystore, you will be asked to overwrite existing keys. The wizard will also generate a network key for your node if needed.
 
@@ -164,9 +164,9 @@ Now the wizard will output `partner-chains-public-keys.json` containing three ke
 
 ### 4. Share keys with the chain builder
 
-In this step, the `partner-chains-cli-public-keys.json` file needs to be shared with the chain builder so that the permissioned validator can be whitelisted, a Cardano address needs to be provided too, this address will be the recipient of rewards in case the node is elegible for them. 
+In this step, the `partner-chains-cli-public-keys.json` file needs to be shared with the chain builder so that the permissioned validator can be whitelisted.
 
-Contact the chain builder and provide the `partner-chains-cli-public-keys.json` file, and a Cardano address.
+Contact the chain builder and provide the `partner-chains-cli-public-keys.json` file.
 
 ### 5. Obtain the chain configuration and specification files
 

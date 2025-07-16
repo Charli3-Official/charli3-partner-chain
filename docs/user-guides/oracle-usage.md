@@ -1,7 +1,7 @@
 # Oracle node onboarding
 
 After finishing the setup as either a block producer or permissioned candidate, each Partner Chain node needs to set up a key for the Oracle.
-This key will identify each node's Oracle feed, and will be used to associate the node to a Cardano address, that will be the one receiving rewards if the node is elegible for it.
+This key will identify each node's Oracle feed, and will be used to associate the node to a Cardano address, that will be the one receiving rewards if the node is eligible for it.
 
 1. Enter the [Polkadot/Substrate portal](https://polkadot.js.org/apps/#/explorer) and connect to the RPC endpoint of your node
 2. Go to Developer -> RPC

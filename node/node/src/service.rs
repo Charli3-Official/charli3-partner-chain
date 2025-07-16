@@ -17,7 +17,7 @@ use sc_transaction_pool_api::OffchainTransactionPoolFactory;
 use sidechain_domain::mainchain_epoch::MainchainEpochConfig;
 use sidechain_mc_hash::McHashInherentDigest;
 use sidechain_runtime::{self, opaque::Block, RuntimeApi};
-use sp_consensus_aura::sr25519::AuthorityPair as AuraPair;
+use sp_consensus_aura::ed25519::AuthorityPair as AuraPair;
 use sp_partner_chains_consensus_aura::block_proposal::PartnerChainsProposerFactory;
 use sp_runtime::traits::Block as BlockT;
 use std::{sync::Arc, time::Duration};

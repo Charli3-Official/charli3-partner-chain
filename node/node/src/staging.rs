@@ -8,7 +8,7 @@ use sidechain_runtime::{
 	SidechainConfig, SudoConfig, SystemConfig,
 };
 use sp_core::bytes::from_hex;
-use sp_core::{ed25519, sr25519};
+use sp_core::{ed25519};
 use std::str::FromStr;
 
 pub fn authority_keys(
@@ -16,7 +16,7 @@ pub fn authority_keys(
 	grandpa_pub_key: &str,
 	sidechain_pub_key: &str,
 ) -> AuthorityKeys {
-	let aura_pk = sr25519::Public::from_raw(from_hex(aura_pub_key).unwrap().try_into().unwrap());
+	let aura_pk = ed25519::Public::from_raw(from_hex(aura_pub_key).unwrap().try_into().unwrap());
 	let granda_pk =
 		ed25519::Public::from_raw(from_hex(grandpa_pub_key).unwrap().try_into().unwrap());
 	let sidechain_pk = sidechain_domain::SidechainPublicKey(from_hex(sidechain_pub_key).unwrap());
@@ -85,7 +85,7 @@ pub fn staging_endowed_accounts() -> Vec<AccountId> {
 }
 
 pub fn staging_sudo_key() -> AccountId {
-	get_account_id_from_seed::<sr25519::Public>(
+	get_account_id_from_seed::<ed25519::Public>(
 		"assist draw loud island six improve van gas slam urban penalty lyrics",
 	)
 }

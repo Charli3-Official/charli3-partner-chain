@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
-use sidechain_runtime::opaque::SessionKeys;
 use sp_core::crypto::AccountId32;
-use sp_core::{ecdsa, ed25519, sr25519};
+use sp_core::{ecdsa, ed25519};
 use sp_runtime::traits::IdentifyAccount;
 use std::fmt::{Display, Formatter};
 
@@ -9,7 +8,7 @@ use std::fmt::{Display, Formatter};
 pub(crate) struct PermissionedCandidateKeys {
 	/// 0x prefixed hex representation of the ECDSA public key
 	pub sidechain_pub_key: String,
-	/// 0x prefixed hex representation of the sr25519 public key
+	/// 0x prefixed hex representation of the ed25519 public key
 	pub aura_pub_key: String,
 	/// 0x prefixed hex representation of the Ed25519 public key
 	pub grandpa_pub_key: String,
@@ -38,13 +37,13 @@ impl From<&ParsedPermissionedCandidatesKeys> for PermissionedCandidateKeys {
 #[derive(Debug, Deserialize, Eq, PartialEq, Ord, PartialOrd, Serialize)]
 pub(crate) struct ParsedPermissionedCandidatesKeys {
 	pub sidechain: ecdsa::Public,
-	pub aura: sr25519::Public,
+	pub aura: ed25519::Public,
 	pub grandpa: ed25519::Public,
 }
 
 impl ParsedPermissionedCandidatesKeys {
-	pub fn session_keys(&self) -> SessionKeys {
-		SessionKeys { aura: self.aura.into(), grandpa: self.grandpa.into() }
+	pub fn session_keys<SessionKeys: From<(ed25519::Public, ed25519::Public)>>(&self) -> SessionKeys {
+		SessionKeys::from((ed25519::Public::from(self.aura), ed25519::Public::from(self.grandpa)))
 	}
 
 	pub fn account_id_32(&self) -> AccountId32 {
@@ -59,8 +58,8 @@ impl TryFrom<&PermissionedCandidateKeys> for ParsedPermissionedCandidatesKeys {
 		let sidechain = parse_ecdsa(&value.sidechain_pub_key).ok_or(anyhow::Error::msg(
 			format!("{} is invalid ECDSA public key", value.sidechain_pub_key),
 		))?;
-		let aura = parse_sr25519(&value.aura_pub_key).ok_or(anyhow::Error::msg(format!(
-			"{} is invalid sr25519 public key",
+		let aura = parse_ed25519(&value.aura_pub_key).ok_or(anyhow::Error::msg(format!(
+			"{} is invalid ed25519 public key",
 			value.aura_pub_key
 		)))?;
 		let grandpa = parse_ed25519(&value.grandpa_pub_key).ok_or(anyhow::Error::msg(format!(
@@ -74,11 +73,6 @@ impl TryFrom<&PermissionedCandidateKeys> for ParsedPermissionedCandidatesKeys {
 fn parse_ecdsa(value: &str) -> Option<ecdsa::Public> {
 	let bytes = sp_core::bytes::from_hex(value).ok()?;
 	Some(ecdsa::Public::from(<[u8; 33]>::try_from(bytes).ok()?))
-}
-
-fn parse_sr25519(value: &str) -> Option<sr25519::Public> {
-	let bytes = sp_core::bytes::from_hex(value).ok()?;
-	Some(sr25519::Public::from(<[u8; 32]>::try_from(bytes).ok()?))
 }
 
 fn parse_ed25519(value: &str) -> Option<ed25519::Public> {

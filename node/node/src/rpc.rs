@@ -71,7 +71,7 @@ where
 	C::Api: substrate_frame_rpc_system::AccountNonceApi<Block, AccountId, Nonce>,
 	C::Api: pallet_transaction_payment_rpc::TransactionPaymentRuntimeApi<Block, Balance>,
 	C::Api: BlockBuilder<Block>,
-	C::Api: sp_consensus_aura::AuraApi<Block, sp_consensus_aura::sr25519::AuthorityId>,
+	C::Api: sp_consensus_aura::AuraApi<Block, sp_consensus_aura::ed25519::AuthorityId>,
 	C::Api: sidechain_slots::SlotApi<Block>,
 	C::Api: sp_sidechain::GetGenesisUtxo<Block>,
 	C::Api: sp_sidechain::GetSidechainStatus<Block>,

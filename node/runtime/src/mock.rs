@@ -12,10 +12,10 @@ use frame_support::{
 use hex_literal::hex;
 use plutus::ToDatum;
 use sidechain_domain::*;
-use sp_consensus_aura::sr25519::AuthorityId as AuraId;
+use sp_consensus_aura::ed25519::AuthorityId as AuraId;
 use sp_consensus_grandpa::AuthorityId as GrandpaId;
 use sp_core::crypto::CryptoType;
-use sp_core::sr25519;
+use sp_core::ed25519;
 use sp_core::{crypto::AccountId32, ed25519, ByteArray, ConstU128, Pair, H256};
 use sp_runtime::{
 	impl_opaque_keys,
@@ -113,8 +113,8 @@ impl_opaque_keys! {
 		pub grandpa: Grandpa,
 	}
 }
-impl From<(sr25519::Public, ed25519::Public)> for TestSessionKeys {
-	fn from((aura, grandpa): (sr25519::Public, ed25519::Public)) -> Self {
+impl From<(ed25519::Public, ed25519::Public)> for TestSessionKeys {
+	fn from((aura, grandpa): (ed25519::Public, ed25519::Public)) -> Self {
 		let aura = AuraId::from(aura);
 		let grandpa = GrandpaId::from(grandpa);
 		Self { aura, grandpa }
@@ -376,7 +376,7 @@ const BOB_SEED: &str = "//2";
 #[derive(Clone)]
 pub struct TestKeys {
 	pub cross_chain: CrossChainPair,
-	pub aura: sp_consensus_aura::sr25519::AuthorityPair,
+	pub aura: sp_consensus_aura::ed25519::AuthorityPair,
 	pub grandpa: sp_consensus_grandpa::AuthorityPair,
 }
 

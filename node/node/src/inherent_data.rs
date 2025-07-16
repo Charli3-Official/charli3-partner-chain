@@ -19,7 +19,7 @@ use sp_api::ProvideRuntimeApi;
 use sp_block_rewards::BlockBeneficiaryInherentProvider;
 use sp_blockchain::HeaderBackend;
 use sp_consensus_aura::{
-	inherents::InherentDataProvider as AuraIDP, sr25519::AuthorityPair as AuraPair, Slot,
+	inherents::InherentDataProvider as AuraIDP, ed25519::AuthorityPair as AuraPair, Slot,
 };
 use sp_core::Pair;
 use sp_inherents::CreateInherentDataProviders;

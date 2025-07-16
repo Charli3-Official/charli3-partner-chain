@@ -250,7 +250,7 @@ The generate-keys wizard will generate necessary keys and save them to your node
 
 1. ECDSA cross-chain key
 2. ED25519 Grandpa key
-3. SR25519 Aura key
+3. ED25519 Aura key
 
 If these keys already exist in the node’s keystore, you will be asked to overwrite existing keys. The wizard will also generate a network key for your node if needed.
 
@@ -267,8 +267,6 @@ Now the wizard will output `partner-chains-public-keys.json` containing three ke
 	"grandpa_pub_key": "0x<key>"
 }
 ```
-
-After getting the keys, contact the chain builder and provide them with your AURA key, and you also have to provide a Cardano address that will be the one that receives rewards in case that the node is elegible for them.
 
 ### 4. Obtain chain parameters
 

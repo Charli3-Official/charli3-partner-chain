@@ -246,7 +246,7 @@ The generate-keys wizard will generate necessary keys and save them to your node
 
 1. ECDSA cross-chain key
 2. ED25519 Grandpa key
-3. SR25519 Aura key
+3. ED25519 Aura key
 
 If these keys already exist in the node’s keystore, you will be asked to overwrite existing keys. The wizard will also generate a network key for your node if needed.
 
@@ -263,27 +263,7 @@ Now the wizard will output `partner-chains-public-keys.json` containing three ke
 }
 ```
 
-### 3. Rebuild with the list of SR25519 keys and Cardano addresses
-
-Every participant node needs to provide their keys and a Cardano address before moving on. After gathering this information, the [template-chain-spec.rs](../../node/node/src/template_chain_spec.rs) file has to be modified to include them in the genesis.
-
-1. For each node, insert a tuple of the AURA key, which is of SR25519 type, and the node's Cardano address. 
-
-https://github.com/txpipe-shop/charli3-substrate-partner-chains/blob/b8847eb582788d9cb389b3b32ffbd56701178a34/node/node/src/template_chain_spec.rs#L16-L19
-
-For example, a well-formed list with only one tuple: 
-
-```rust
-let sr25519_key_and_mainchain_addresses: Vec<(&str,  &str)> = [
-	  ("0x0x7c1c812ca7011cfbd1e1ae307802a76873c127f5a0f3a9ec525772bae4b95c7c", "stake_test1uq9g6aw9gxgq669ny2m0sqccy4k3nxg293c6ulgwp3qqlusm9ptu9")
-	].to_vec();
-```
-
-2. After including all of the nodes pairs, run `cargo build` again so that this modification is reflected on the genesis.
-
-This will be reflected in the Storage as a map that associates each nodes key with a Cardano address.
-
-### 4. Run the prepare-configuration wizard
+### 3. Run the prepare-configuration wizard
 
 Before running this wizard, be sure that `ogmios` is available by host and port.
 
@@ -370,7 +350,7 @@ A sample file:
 }
 ```
 
-### 5. Run the create-chain-spec wizard
+### 4. Run the create-chain-spec wizard
 
 The wizard reads the file `partner-chains-cli-chain-config.json`. This file should be present and identical for every node participating in the chain.
 
@@ -382,7 +362,7 @@ The wizard creates the chain specification file `chain-spec.json` using these va
 
 The wizard informs you of the full path to the `chain-spec.json` file. You can now distribute this file to block production committee candidates.
 
-### 6. Run the setup-main-chain-state wizard
+### 5. Run the setup-main-chain-state wizard
 
 1. Start the wizard: `./partner-chains-cli setup-main-chain-state`
 
@@ -401,7 +381,7 @@ The configuration of the chain is stored in the file `partner-chains-cli-chain-c
 
 Information about the resources used by each node is stored in the file `partner-chain-cli-resources-config.json`. This file should be present for every node participating in the chain, but its contents are specific to each node.
 
-### 7. Run the partner chain node
+### 6. Run the partner chain node
 
 The start-node wizard is used to start a partner chain node. Make sure that `cardano-node` is running with DB Sync running and fully synced. You will need to provide a link to a PostgreSQL server running with DB Sync as part of starting the node.
 
@@ -414,7 +394,7 @@ Be sure two main chain (Cardano) epochs have passed since the registration of a 
 5. If the `db_sync_postgres_connection_string` is missing from the `partner-chain-cli-resources-config.json` file, the wizard prompts for it, using the default value `postgresql://postgres-user:postgres-password@localhost:5432/cexplorer`.
 6. The wizard outputs all relevant parameters and asks if they are correct. If not, you should edit the `partner-chains-cli-chain-config.json` and/or `partner-chain-cli-resources-config.json` files and run the wizard again.
 
-### 8. Distribute chain files to participants
+### 7. Distribute chain files to participants
 
 The partner chain is now ready to start accepting registered validator nodes. [Permissioned candidates](./docs/user-guides/permissioned.md) and [Registered candidates](./docs/user-guides/registered.md) have different onboarding processes. Please follow the respective steps for the corresponding type of user.
 
