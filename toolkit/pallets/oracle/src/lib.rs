@@ -69,6 +69,8 @@ pub mod pallet {
         type AuthorityId: AppCrypto<Self::Public, Self::Signature>;
     }
 
+    pub type Rational = Ratio<u128>;
+
     /// Oracle configuration
     #[pallet::storage]
     pub type MinNodesForTrustedAggregation<T> = StorageValue<_, u32>;

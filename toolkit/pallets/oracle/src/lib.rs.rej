@@ -1,130 +1,77 @@
 diff a/toolkit/pallets/oracle/src/lib.rs b/toolkit/pallets/oracle/src/lib.rs	(rejected hunks)
-@@ -310,24 +312,45 @@ pub mod pallet {
-                         .with_filter(vec![signer_account.clone().public]);
+@@ -9,10 +9,12 @@ use frame_system::{
+     pallet_prelude::BlockNumberFor,
+ };
+ use hex::ToHex;
++use num_rational::Ratio;
++use num_traits::ops::checked::{CheckedAdd, CheckedMul};
+ use pallet_timestamp::{self as timestamp};
+ use scale_info::prelude::{vec, vec::Vec};
+ use sp_core::crypto::KeyTypeId;
+-use sp_runtime::SaturatedConversion;
++use sp_runtime::{traits::CheckedSub, SaturatedConversion};
+ use sp_std::boxed::Box;
  
-                     if signer.can_sign() {
--                        let price = Self::fetch_price()
--                            .map_err(|e| {
-+                        if let Ok(price) = Self::fetch_price().map_err(|e| {
-+                            log::error!(
-+                                "[{:?}]: failed to fetch price: {:?}",
-+                                signer_account.id,
-+                                e
-+                            );
-+                        }) {
-+                            let result = signer.send_single_signed_transaction(
-+                                &signer_account,
-+                                Call::store_price { price },
-+                            );
-+                            if result.is_some_and(|res| res.is_ok()) {
-+                                log::info!(
-+                                    "[{:?}]: submit store price transaction success.",
-+                                    signer_account.id
-+                                )
-+                            } else {
-                                 log::error!(
--                                    "[{:?}]: failed to fetch price: {:?}",
--                                    signer_account.id,
--                                    e
--                                );
--                            })
--                            .ok();
--                        let signed_msg = Self::sign_oracle_message(&signer);
--                        let result = signer.send_single_signed_transaction(
--                            &signer_account,
--                            Call::store_price_and_signature { price, signed_msg },
--                        );
--                        if result.is_some_and(|res| res.is_ok()) {
--                            log::info!("[{:?}]: submit transaction success.", signer_account.id)
--                        } else {
--                            log::error!("[{:?}]: submit transaction failure.", signer_account.id)
-+                                    "[{:?}]: submit store price transaction failure.",
-+                                    signer_account.id
-+                                )
-+                            }
-+                        }
-+                        if let Some((message, signature)) = Self::sign_oracle_message(&signer) {
-+                            let result = signer.send_single_signed_transaction(
-+                                &signer_account,
-+                                Call::store_signature { message, signature },
-+                            );
-+                            if result.is_some_and(|res| res.is_ok()) {
-+                                log::info!(
-+                                    "[{:?}]: submit store signature transaction success.",
-+                                    signer_account.id
-+                                )
-+                            } else {
-+                                log::error!(
-+                                    "[{:?}]: submit store signature transaction failure.",
-+                                    signer_account.id
-+                                )
-+                            }
-                         }
-                     }
-                 }
-@@ -372,7 +395,7 @@ pub mod pallet {
-                 log::info!(
-                     "Median price for block {:?} is {:?} with status: {:?}",
-                     n,
--                    oracle_message,
-+                    oracle_message.median_price,
-                     flag
-                 );
-                 Self::deposit_event(Event::Status {
-@@ -549,30 +572,32 @@ impl<T: Config> Pallet<T> {
-     fn sign_oracle_message(
-         signer: &Signer<T, <T as Config>::AuthorityId, frame_system::offchain::ForAll>,
-     ) -> Option<(OracleMessage, T::Signature)> {
--        if let Some((message, prev_age)) = Price::<T>::get() {
--            if prev_age == 0 {
--                log::info!("Prepared Message: {:?}", message);
--                let cbor_hex: Box<str> = message.to_cardano_cbor().encode_hex();
--                log::info!("Message cbor: {}", cbor_hex);
--                let msg_hash_digest = message.cardano_cbor_hash();
--                let msg_hash_hex: Box<str> = msg_hash_digest.encode_hex();
--                log::info!("Message hash: {}", msg_hash_hex);
--
--                if let Some(signed_message) = signer.sign_message(&msg_hash_digest).pop() {
--                    log::info!("Account signed: {:?}", signed_message.0.id);
--                    let hex_signature: Box<str> = signed_message.1.encode().encode_hex();
--                    log::info!("Signed message: {}", hex_signature);
--
--                    Some((message, signed_message.1))
--                } else {
--                    log::error!("Couldn't retrieve signature");
--                    None
--                }
--            } else {
--                None
--            }
--        } else {
--            None
-+        let (message, age) = Price::<T>::get()?;
-+
-+        if age != 0 {
-+            return None;
+ pub const KEY_TYPE: KeyTypeId = KeyTypeId(*b"orac");
+@@ -508,20 +512,50 @@ impl<T: Config> Pallet<T> {
          }
-+
-+        log::info!("Prepared Message: {:?}", message);
-+        let cbor_hex: Box<str> = message.to_cardano_cbor().encode_hex();
-+        log::debug!("Message cbor: {}", cbor_hex);
-+
-+        let msg_hash_digest = message.cardano_cbor_hash();
-+        let msg_hash_hex: Box<str> = msg_hash_digest.encode_hex();
-+        log::debug!("Message hash: {}", msg_hash_hex);
-+
-+        let signed_message = match signer.sign_message(&msg_hash_digest).pop() {
-+            Some(signed) => signed,
-+            _none => {
-+                log::error!("Couldn't retrieve signature");
-+                return None;
-+            }
-+        };
-+
-+        log::info!("Account signed: {:?}", signed_message.0.id);
-+        let hex_signature: Box<str> = signed_message.1.encode().encode_hex();
-+        log::info!("Signed message: {}", hex_signature);
-+
-+        Some((message, signed_message.1))
      }
- }
+ 
+-    fn calculate_median(prices: Vec<u32>) -> u32 {
+-        let length: usize = prices.len();
+-
+-        if length % 2 == 1 {
+-            // Odd length: return the middle element
+-            prices[length / 2]
+-        } else {
+-            // Even length: average of the two middle elements
+-            let mid1 = prices[length / 2 - 1];
+-            let mid2 = prices[length / 2];
+-            (mid1 + mid2) / 2
++    /// It will check for underflow/overflow and list size limitations (>0) and return None in that cases.
++    fn calculate_median(sorted_integers: Vec<u32>) -> Option<u32> {
++        match sorted_integers.as_slice() {
++            [] => None,
++            [x] => Some(*x),
++            _ => Self::quantile(sorted_integers, Rational::new(1, 2))
++                .and_then(|v| v.round().to_integer().try_into().ok()),
+         }
+     }
+ 
++    /// Returns weighted (by proximity) average of the two elements closest to the quantile index q * (n - 1)
++    /// It will also check for underflow/overflow and list size limitations (>1) and return None in that cases.
++    fn quantile(
++        // Input list sorted
++        sorted_integers: Vec<u32>,
++        // Desired quantile (between 0 and 100%)
++        q: Rational,
++    ) -> Option<Rational> {
++        let length: u128 = sorted_integers.len().try_into().unwrap();
++
++        let n_sub_one: Rational = Rational::from_integer(length.checked_sub(1)?);
++        let quantile_index: Rational = q.checked_mul(&n_sub_one)?;
++
++        // Integral part of q * (length - 1)
++        let j: Rational = quantile_index.floor();
++        // Fractional part of q * (length - 1)
++        let g: Rational = quantile_index.checked_sub(&j)?;
++
++        let mid_index: usize = j.to_integer().try_into().unwrap();
++        // Get the j-th element of the list (0-indexed)
++        let mid_left: u32 = *sorted_integers.get(mid_index)?;
++        let x_j: u128 = mid_left.try_into().unwrap();
++        // Get the (j+1)-th element of the list
++        let mid_right: u32 = *sorted_integers.get(mid_index + 1)?;
++        let x_j_1: u128 = mid_right.try_into().unwrap();
++
++        // Linearly interpolate between x_j
++        // and x_j_1, using g as the mixing factor.
++        let one_g: Rational = Rational::from_integer(1).checked_sub(&g)?;
++        let fst: Rational = one_g.checked_mul(&Rational::from_integer(x_j))?;
++        let snd: Rational = g.checked_mul(&Rational::from_integer(x_j_1))?;
++        fst.checked_add(&snd)
++    }
++
+     fn get_oracle_config() -> Option<OracleConfiguration> {
+         let min_nodes_for_trusted_aggregation =
+             MinNodesForTrustedAggregation::<T>::get().or_else(|| {
