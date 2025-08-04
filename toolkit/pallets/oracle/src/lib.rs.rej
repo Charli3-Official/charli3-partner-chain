@@ -1,77 +1,9 @@
 diff a/toolkit/pallets/oracle/src/lib.rs b/toolkit/pallets/oracle/src/lib.rs	(rejected hunks)
-@@ -9,10 +9,12 @@ use frame_system::{
-     pallet_prelude::BlockNumberFor,
- };
- use hex::ToHex;
-+use num_rational::Ratio;
-+use num_traits::ops::checked::{CheckedAdd, CheckedMul};
- use pallet_timestamp::{self as timestamp};
- use scale_info::prelude::{vec, vec::Vec};
+@@ -16,6 +16,7 @@ use scale_info::prelude::{vec, vec::Vec};
  use sp_core::crypto::KeyTypeId;
--use sp_runtime::SaturatedConversion;
-+use sp_runtime::{traits::CheckedSub, SaturatedConversion};
+ use sp_runtime::{traits::CheckedSub, SaturatedConversion};
  use sp_std::boxed::Box;
++use codec::alloc::string::ToString;
  
  pub const KEY_TYPE: KeyTypeId = KeyTypeId(*b"orac");
-@@ -508,20 +512,50 @@ impl<T: Config> Pallet<T> {
-         }
-     }
  
--    fn calculate_median(prices: Vec<u32>) -> u32 {
--        let length: usize = prices.len();
--
--        if length % 2 == 1 {
--            // Odd length: return the middle element
--            prices[length / 2]
--        } else {
--            // Even length: average of the two middle elements
--            let mid1 = prices[length / 2 - 1];
--            let mid2 = prices[length / 2];
--            (mid1 + mid2) / 2
-+    /// It will check for underflow/overflow and list size limitations (>0) and return None in that cases.
-+    fn calculate_median(sorted_integers: Vec<u32>) -> Option<u32> {
-+        match sorted_integers.as_slice() {
-+            [] => None,
-+            [x] => Some(*x),
-+            _ => Self::quantile(sorted_integers, Rational::new(1, 2))
-+                .and_then(|v| v.round().to_integer().try_into().ok()),
-         }
-     }
- 
-+    /// Returns weighted (by proximity) average of the two elements closest to the quantile index q * (n - 1)
-+    /// It will also check for underflow/overflow and list size limitations (>1) and return None in that cases.
-+    fn quantile(
-+        // Input list sorted
-+        sorted_integers: Vec<u32>,
-+        // Desired quantile (between 0 and 100%)
-+        q: Rational,
-+    ) -> Option<Rational> {
-+        let length: u128 = sorted_integers.len().try_into().unwrap();
-+
-+        let n_sub_one: Rational = Rational::from_integer(length.checked_sub(1)?);
-+        let quantile_index: Rational = q.checked_mul(&n_sub_one)?;
-+
-+        // Integral part of q * (length - 1)
-+        let j: Rational = quantile_index.floor();
-+        // Fractional part of q * (length - 1)
-+        let g: Rational = quantile_index.checked_sub(&j)?;
-+
-+        let mid_index: usize = j.to_integer().try_into().unwrap();
-+        // Get the j-th element of the list (0-indexed)
-+        let mid_left: u32 = *sorted_integers.get(mid_index)?;
-+        let x_j: u128 = mid_left.try_into().unwrap();
-+        // Get the (j+1)-th element of the list
-+        let mid_right: u32 = *sorted_integers.get(mid_index + 1)?;
-+        let x_j_1: u128 = mid_right.try_into().unwrap();
-+
-+        // Linearly interpolate between x_j
-+        // and x_j_1, using g as the mixing factor.
-+        let one_g: Rational = Rational::from_integer(1).checked_sub(&g)?;
-+        let fst: Rational = one_g.checked_mul(&Rational::from_integer(x_j))?;
-+        let snd: Rational = g.checked_mul(&Rational::from_integer(x_j_1))?;
-+        fst.checked_add(&snd)
-+    }
-+
-     fn get_oracle_config() -> Option<OracleConfiguration> {
-         let min_nodes_for_trusted_aggregation =
-             MinNodesForTrustedAggregation::<T>::get().or_else(|| {

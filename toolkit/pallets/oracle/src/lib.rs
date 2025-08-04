@@ -214,7 +214,10 @@ pub mod pallet {
     /// pallet auxiliary methods
     impl<T: Config> Pallet<T> {
         pub fn fetch_price() -> Result<u32, http::Error> {
-            CryptoCompareProvider::fetch_price()
+            match CryptoCompareProvider::fetch_price(vec!["ADA.USD".to_string()])?.as_slice() {
+                [price] => Ok(*price),
+                _ => Err(http::Error::Unknown),
+            }
         }
     }
 
