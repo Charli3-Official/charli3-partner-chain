@@ -22,14 +22,14 @@ type CryptoCompareResponse = BTreeMap<String, BTreeMap<String, f64>>;
 /// Trade Pair measures price of base (from) currency in terms of quote (to) currency.
 /// E.g. ADA-USD (BASE-QUOTE) price tells a price of 1 ADA in USD.
 #[derive(Clone, Serialize, Deserialize, Eq, PartialEq, Debug)]
-pub struct TradePair {
+pub struct CryptoCompareTradePair {
     /// Base aka from currency, e.g. ADA
     base_currency: String,
     /// Quote aka to currency, e.g. USD
     quote_currency: String,
 }
 
-impl TradePair {
+impl CryptoCompareTradePair {
     /// Create a Trade Pair from BASE and QUOTE currencies separated by delimiter:
     /// '_' ' ' '/' '-' '.' are accepted as delimiters.
     /// For example ADA-USD, where ADA is a base currency and USD is a quote currency.
@@ -39,9 +39,9 @@ impl TradePair {
             .collect::<Vec<&str>>()
             .as_slice()
         {
-            [base, quote] => TradePair {
-                base_currency: base.to_string(),
-                quote_currency: quote.to_string(),
+            [base, quote] => CryptoCompareTradePair {
+                base_currency: base.to_uppercase().to_string(),
+                quote_currency: quote.to_uppercase().to_string(),
             },
             _ => panic!["TradePair.from_ticker parse error."],
         }
@@ -66,8 +66,10 @@ impl PriceProvider for CryptoCompareProvider {
             }
         };
 
-        let trade_pairs: Vec<TradePair> =
-            tickers.iter().map(|t| TradePair::from_ticker(t)).collect();
+        let trade_pairs: Vec<CryptoCompareTradePair> = tickers
+            .iter()
+            .map(|t| CryptoCompareTradePair::from_ticker(t))
+            .collect();
         let from_syms: String = trade_pairs
             .iter()
             .map(|p| p.base_currency.as_str())
