@@ -1,43 +1,10 @@
 diff a/toolkit/pallets/oracle/src/lib.rs b/toolkit/pallets/oracle/src/lib.rs	(rejected hunks)
-@@ -3,6 +3,7 @@
- pub use pallet::*;
- 
- use codec::{Decode, Encode, MaxEncodedLen};
-+use frame_support::__private::codec::DecodeWithMemTracking;
+@@ -6,7 +6,7 @@ use codec::{Decode, Encode, MaxEncodedLen};
+ use frame_support::__private::codec::DecodeWithMemTracking;
  use frame_support::pallet_prelude::{BoundedVec, ConstU32};
  use frame_system::{
-     offchain::{SignMessage, Signer},
-@@ -163,13 +163,15 @@ pub mod pallet {
-     }
- 
-     // Aggregation status flag
--    #[derive(Clone, PartialEq, Encode, Decode, MaxEncodedLen, TypeInfo, Debug)]
-+    #[derive(Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, MaxEncodedLen, TypeInfo, Debug)]
-+    #[codec(mel_bound())]
-     pub enum Flag {
-         Ok,
-         NotEnoughNodes,
-         NoPreviousMedian,
-     }
- 
-+
-     /// pallet events
-     #[pallet::event]
-     #[pallet::generate_deposit(pub(super) fn deposit_event)]
-@@ -195,13 +197,15 @@ pub mod pallet {
-         },
-     }
- 
--    #[derive(Clone, Encode, Decode, Eq, PartialEq, Debug, MaxEncodedLen, TypeInfo)]
-+    #[derive(Clone, Encode, Decode, DecodeWithMemTracking, Eq, PartialEq, Debug, MaxEncodedLen, TypeInfo)]
-+    #[codec(mel_bound())]
-     pub struct OracleMessage {
-         pub median_price: u32,
-         pub timestamp: u64,
-         pub rewards: BoundedVec<[u8; 32], ConstU32<64>>, // Vec of byte arrays for ed25519 public keys
-     }
- 
-+
-     impl Default for OracleMessage {
-         fn default() -> Self {
-             OracleMessage {
+-    offchain::{SignMessage, Signer},
++    offchain::{SignMessage, Signer,SigningTypes},
+     pallet_prelude::BlockNumberFor,
+ };
+ use hex::ToHex;
