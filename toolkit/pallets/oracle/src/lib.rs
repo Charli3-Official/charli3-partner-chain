@@ -153,8 +153,8 @@ pub mod pallet {
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config> {
-        StoredPrice {
-            price: u32,
+        StoredPrices {
+            count: u16,
             who: T::AccountId,
             when: BlockNumberFor<T>,
         },
@@ -176,12 +176,15 @@ pub mod pallet {
     impl<T: Config> Pallet<T> {
         #[pallet::call_index(0)]
         #[pallet::weight((0, Pays::No))]
-        pub fn store_price(origin: OriginFor<T>, price: u32) -> DispatchResult {
+        pub fn store_prices(origin: OriginFor<T>, prices: Vec<(TradePair, u32)>) -> DispatchResult {
             let who = ensure_signed(origin)?;
             let when = <frame_system::Pallet<T>>::block_number();
-            NodesPrices::<T>::insert(&who, (price, when));
-            Self::deposit_event(Event::StoredPrice {
-                price,
+            prices.iter().for_each(|(tp, price)| {
+                NodesPrices::<T>::insert(tp, &who, (price, when));
+            });
+            Self::deposit_event(Event::StoredPrices {
+                count: TryInto::<u16>::try_into(prices.len())
+                    .map_err(|_| sp_runtime::DispatchError::Other("CountOverflow"))?,
                 who: who.clone(),
                 when,
             });
@@ -219,11 +222,8 @@ pub mod pallet {
 
     /// pallet auxiliary methods
     impl<T: Config> Pallet<T> {
-        pub fn fetch_price() -> Result<u32, http::Error> {
-            match CryptoCompareProvider::fetch_price(vec!["ADA.USD".to_string()])?.as_slice() {
-                [price] => Ok(*price),
-                _ => Err(http::Error::Unknown),
-            }
+        pub fn fetch_prices() -> Result<Vec<u32>, http::Error> {
+            CryptoCompareProvider::fetch_prices(vec!["ADA.USD".to_string()])
         }
     }
 

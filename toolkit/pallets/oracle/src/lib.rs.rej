@@ -1,48 +1,64 @@
 diff a/toolkit/pallets/oracle/src/lib.rs b/toolkit/pallets/oracle/src/lib.rs	(rejected hunks)
-@@ -6,7 +6,7 @@ use codec::{Decode, Encode, MaxEncodedLen};
- use frame_support::__private::codec::DecodeWithMemTracking;
- use frame_support::pallet_prelude::{BoundedVec, ConstU32};
- use frame_system::{
--    offchain::{SignMessage, Signer,SigningTypes},
-+    offchain::{SignMessage, Signer, SigningTypes},
-     pallet_prelude::BlockNumberFor,
- };
- use hex::ToHex;
-@@ -164,7 +170,9 @@ pub mod pallet {
-     }
+@@ -102,7 +102,9 @@ pub mod pallet {
  
-     // Aggregation status flag
--    #[derive(Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, MaxEncodedLen, TypeInfo, Debug)]
+     /// Trade Pair measures price of base (from) currency in terms of quote (to) currency.
+     /// E.g. ADA-USD (BASE-QUOTE) price tells a price of 1 ADA in USD.
+-    #[derive(Clone, Encode, Decode, Eq, PartialEq, Debug, MaxEncodedLen, TypeInfo)]
 +    #[derive(
-+        Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, MaxEncodedLen, TypeInfo, Debug,
++        Clone, Encode, DecodeWithMemTracking, Decode, Eq, PartialEq, Debug, MaxEncodedLen, TypeInfo,
 +    )]
-     #[codec(mel_bound())]
-     pub enum Flag {
-         Ok,
-@@ -172,7 +180,6 @@ pub mod pallet {
-         NoPreviousMedian,
+     pub struct TradePair {
+         /// Base aka from currency, e.g. ADA
+         base_currency: BoundedVec<u8, ConstU32<64>>,
+@@ -173,12 +175,14 @@ pub mod pallet {
+         pub divergency: u32,
      }
  
--
-     /// pallet events
-     #[pallet::event]
-     #[pallet::generate_deposit(pub(super) fn deposit_event)]
-@@ -198,7 +205,9 @@ pub mod pallet {
-         },
-     }
+-    /// NodesPrices store latest price for each node
+-    /// about Identity hasher https://docs.substrate.io/build/runtime-storage/#common-substrate-hashers
++    /// NodesPrices store latest price for each node indexed by trade pair prefix
++    /// about hashers https://docs.substrate.io/build/runtime-storage/#common-substrate-hashers
+     #[pallet::storage]
+-    pub type NodesPrices<T: Config> = StorageMap<
+-        Hasher = Identity,
+-        Key = T::AccountId,
++    pub type NodesPrices<T: Config> = StorageDoubleMap<
++        Hasher1 = Twox64Concat,
++        Key1 = TradePair,
++        Hasher2 = Identity,
++        Key2 = T::AccountId,
+         Value = (u32, BlockNumberFor<T>),
+         QueryKind = OptionQuery,
+     >;
+@@ -411,7 +415,7 @@ pub mod pallet {
+                         .with_filter(vec![signer_account.clone().public]);
  
--    #[derive(Clone, Encode, Decode, DecodeWithMemTracking, Eq, PartialEq, Debug, MaxEncodedLen, TypeInfo)]
-+    #[derive(
-+        Clone, Encode, Decode, DecodeWithMemTracking, Eq, PartialEq, Debug, MaxEncodedLen, TypeInfo,
-+    )]
-     #[codec(mel_bound())]
-     pub struct OracleMessage {
-         pub median_price: u32,
-@@ -206,7 +215,6 @@ pub mod pallet {
-         pub rewards: BoundedVec<[u8; 32], ConstU32<64>>, // Vec of byte arrays for ed25519 public keys
-     }
- 
--
-     impl Default for OracleMessage {
-         fn default() -> Self {
-             OracleMessage {
+                     if signer.can_sign() {
+-                        if let Ok(price) = Self::fetch_price().map_err(|e| {
++                        if let Ok(prices) = Self::fetch_prices().map_err(|e| {
+                             log::error!(
+                                 "[{:?}]: failed to fetch price: {:?}",
+                                 signer_account.id,
+@@ -420,7 +424,12 @@ pub mod pallet {
+                         }) {
+                             let result = signer.send_single_signed_transaction(
+                                 &signer_account,
+-                                Call::store_price { price },
++                                Call::store_prices {
++                                    prices: prices
++                                        .into_iter()
++                                        .map(|price| (TradePair::from_ticker("ADA.USD"), price))
++                                        .collect(),
++                                },
+                             );
+                             if result.is_some_and(|res| res.is_ok()) {
+                                 log::info!(
+@@ -468,7 +477,7 @@ pub mod pallet {
+             }) = Self::get_oracle_config()
+             {
+                 let mut participating_nodes: u32 = 0;
+-                let prices = NodesPrices::<T>::iter()
++                let prices = NodesPrices::<T>::iter_prefix(TradePair::from_ticker("ADA.USD"))
+                     .by_ref()
+                     .filter_map(|(k, (p, a))| {
+                         if (n - a) <= feed_age.into() {

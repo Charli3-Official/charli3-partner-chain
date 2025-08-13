@@ -10,7 +10,7 @@ use sp_runtime::Vec;
 use sp_std::collections::btree_map::BTreeMap;
 
 pub trait PriceProvider {
-    fn fetch_price(tickers: Vec<String>) -> Result<Vec<u32>, http::Error>;
+    fn fetch_prices(tickers: Vec<String>) -> Result<Vec<u32>, http::Error>;
 }
 
 pub struct CryptoCompareProvider;
@@ -49,7 +49,7 @@ impl CryptoCompareTradePair {
 }
 
 impl PriceProvider for CryptoCompareProvider {
-    fn fetch_price(tickers: Vec<String>) -> Result<Vec<u32>, http::Error> {
+    fn fetch_prices(tickers: Vec<String>) -> Result<Vec<u32>, http::Error> {
         // Get API key from offchain storage if available
         let api_key = match sp_io::offchain::local_storage_get(
             sp_core::offchain::StorageKind::PERSISTENT,
