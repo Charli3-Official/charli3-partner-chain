@@ -75,8 +75,6 @@ pub mod pallet {
         type AuthorityId: AppCrypto<Self::Public, Self::Signature>;
     }
 
-    pub type Rational = Ratio<u128>;
-
     /// Oracle configuration
     #[pallet::storage]
     pub type MinNodesForTrustedAggregation<T> = StorageValue<_, u32>;
@@ -233,7 +231,7 @@ pub mod pallet {
         // Offchain worker that triggers the extrinsic submitting a price to the
         // NodePrices storage
         fn offchain_worker(_n: BlockNumberFor<T>) {
-            log::info!("Starting offchain worker to query price");
+            log::info!("Starting offchain worker to query price from configured sources");
             let mut acc_list = Signer::<T, T::AuthorityId>::keystore_accounts();
             match acc_list.next() {
                 Some(signer_account) if acc_list.next().is_none() => {
