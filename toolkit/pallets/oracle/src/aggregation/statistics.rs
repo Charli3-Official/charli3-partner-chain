@@ -9,6 +9,8 @@ const SCALING_FACTOR: u128 = 1000;
 const PERCENT: u128 = 100;
 const IQR_THRESHOLD: usize = 4;
 
+/// Returns weighted (by proximity) average of the two elements closest to the quantile index q * (n - 1)
+/// It will also check for underflow/overflow and list size limitations (>1) and return None in that cases.
 pub fn quantile(sorted_prices: Vec<u32>, q: Rational) -> Option<Rational> {
     let length: u128 = sorted_prices.len().try_into().ok()?;
 
@@ -18,10 +20,13 @@ pub fn quantile(sorted_prices: Vec<u32>, q: Rational) -> Option<Rational> {
             .map(|&x| Rational::from_integer(x.into()));
     }
 
+    // Calculate quantile index: q * (length - 1)
     let n_minus_one = Rational::from_integer(length.checked_sub(1)?);
     let index = q.checked_mul(&n_minus_one)?;
 
+    // Integral part of the quantile index
     let lower_idx: usize = index.floor().to_integer().try_into().ok()?;
+    // Fractional part of the quantile index
     let weight = index.checked_sub(&index.floor())?;
 
     if lower_idx + 1 >= sorted_prices.len() {
@@ -31,6 +36,7 @@ pub fn quantile(sorted_prices: Vec<u32>, q: Rational) -> Option<Rational> {
     let lower_val = Rational::from_integer(sorted_prices[lower_idx].into());
     let upper_val = Rational::from_integer(sorted_prices[lower_idx + 1].into());
 
+    // Linearly interpolate between lower_val and upper_val, using weight as the mixing factor.
     let weighted_lower = (Rational::from_integer(1) - weight).checked_mul(&lower_val)?;
     let weighted_upper = weight.checked_mul(&upper_val)?;
 
