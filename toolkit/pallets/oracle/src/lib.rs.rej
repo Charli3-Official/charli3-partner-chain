@@ -1,39 +1,339 @@
 diff a/toolkit/pallets/oracle/src/lib.rs b/toolkit/pallets/oracle/src/lib.rs	(rejected hunks)
-@@ -442,8 +442,14 @@ pub mod pallet {
-                     let signer = Signer::<T, T::AuthorityId>::all_accounts()
-                         .with_filter(vec![signer_account.clone().public]);
+@@ -104,6 +104,12 @@ pub mod pallet {
+     #[pallet::storage]
+     pub type TradePairs<T> = StorageValue<_, BoundedVec<TradePair, ConstU32<64>>>;
  
--                    if signer.can_sign() {
--                        if let Ok(prices) = Self::fetch_prices().map_err(|e| {
-+                    if let Some(trade_pairs) = TradePairs::<T>::get() {
-+                        if let Ok(prices) = Self::fetch_prices(
-+                            trade_pairs
-+                                .iter()
-+                                .map(|tp| tp.to_ticker().to_uppercase())
-+                                .collect(),
-+                        )
-+                        .map_err(|e| {
-                             log::error!(
-                                 "[{:?}]: failed to fetch price: {:?}",
-                                 signer_account.id,
-@@ -453,10 +459,7 @@ pub mod pallet {
-                             let result = signer.send_single_signed_transaction(
-                                 &signer_account,
-                                 Call::store_prices {
--                                    prices: prices
--                                        .into_iter()
--                                        .map(|price| (TradePair::from_ticker("ADA.USD"), price))
--                                        .collect(),
-+                                    prices: trade_pairs.into_iter().zip(prices).collect(),
-                                 },
-                             );
-                             if result.is_some_and(|res| res.is_ok()) {
-@@ -488,6 +491,8 @@ pub mod pallet {
++    pub type ChannelId = BoundedVec<u8, ConstU32<64>>;
++
++    #[pallet::storage]
++    pub type ChannelsToTradePairs<T> =
++        StorageValue<_, BoundedVec<(ChannelId, BoundedVec<u16, ConstU32<64>>), ConstU32<16>>>;
++
+     /// Trade Pair measures price of base (from) currency in terms of quote (to) currency.
+     /// E.g. ADA-USD (BASE-QUOTE) price tells a price of 1 ADA in USD.
+     #[derive(
+@@ -113,6 +119,8 @@ pub mod pallet {
+         Decode,
+         Eq,
+         PartialEq,
++        Ord,
++        PartialOrd,
+         Debug,
+         MaxEncodedLen,
+         TypeInfo,
+@@ -219,9 +227,8 @@ pub mod pallet {
+     >;
+ 
+     /// Prices after nodes "consensus"
+-    /// This is the aggregated Oracle Message
+     #[pallet::storage]
+-    pub type Aggregation<T> = StorageValue<_, OracleMessage>;
++    pub type Aggregation<T> = StorageValue<_, AggregationState>;
+ 
+     /// Signatures are indexed by oracle message timestamp.
+     /// Second key is the signatory pub key, value is the signature bytes.
+@@ -244,6 +251,8 @@ pub mod pallet {
+         pub outliers_range: u32,
+         pub divergency: u32,
+         pub trade_pairs: BoundedVec<TradePair, ConstU32<64>>,
++        pub channels_to_trade_pairs:
++            BoundedVec<(ChannelId, BoundedVec<u16, ConstU32<64>>), ConstU32<16>>,
+         // Ties `T` to `GenesisConfig` because is needed for `impl<T: Config> BuildGenesisConfig ...`
+         pub _marker: PhantomData<T>,
+     }
+@@ -256,6 +265,7 @@ pub mod pallet {
+                 outliers_range: Default::default(),
+                 divergency: Default::default(),
+                 trade_pairs: BoundedVec::truncate_from(vec![TradePair::from_ticker("ADA-USD")]),
++                channels_to_trade_pairs: BoundedVec::new(),
+                 _marker: Default::default(),
+             }
+         }
+@@ -269,6 +279,7 @@ pub mod pallet {
+             <OutliersRange<T>>::put(&self.outliers_range);
+             <Divergency<T>>::put(&self.divergency);
+             <TradePairs<T>>::put(&self.trade_pairs);
++            <ChannelsToTradePairs<T>>::put(&self.channels_to_trade_pairs);
+         }
+     }
+ 
+@@ -281,14 +292,13 @@ pub mod pallet {
+             who: T::AccountId,
+             when: BlockNumberFor<T>,
+         },
+-        StoredSignature {
+-            message: OracleMessage,
++        StoredSignatures {
+             who: T::AccountId,
+             when: BlockNumberFor<T>,
+-            signature: T::Signature,
++            signatures: Vec<(OracleMessage, T::Signature)>,
+         },
+         Status {
+-            message: OracleMessage,
++            current_state: AggregationState,
+             block: BlockNumberFor<T>,
+         },
+     }
+@@ -296,12 +306,29 @@ pub mod pallet {
+     #[derive(
+         Clone, Encode, Decode, DecodeWithMemTracking, Eq, PartialEq, Debug, MaxEncodedLen, TypeInfo,
+     )]
++    /// This is the aggregated data after oracle consensus
++    pub struct AggregationState {
++        /// Vec of prices and their respective age (in blocks ago),
++        /// Third entry is a vec of byte arrays for rewarded nodes ed25519 public keys
++        pub prices_age_and_rewards:
++            BoundedVec<Option<(u32, u16, BoundedVec<[u8; 32], ConstU32<64>>)>, ConstU32<64>>,
++        /// Aggregation timestamp
++        pub timestamp: u64,
++    }
++
++    #[derive(
++        Clone, Encode, Decode, DecodeWithMemTracking, Eq, PartialEq, Debug, MaxEncodedLen, TypeInfo,
++    )]
++    /// This is the aggregated Oracle Message
+     pub struct OracleMessage {
+-        /// Vec of prices and their respective age (in blocks ago)
++        /// Channel aka Message Queue ID,
++        /// any subscriber can then use this to identify the message he wanted to bridge.
++        pub channel_id: ChannelId,
++        /// Vec of prices and their respective age (in blocks ago).
+         pub prices_and_age: BoundedVec<Option<(u32, u16)>, ConstU32<64>>,
+-        /// Aggregation timestamp
++        /// Aggregation timestamp.
+         pub timestamp: u64,
+-        /// Vec of byte arrays for ed25519 public keys with reward multiplier
++        /// Vec of byte arrays for ed25519 public keys with reward multiplier.
+         pub rewards: BoundedVec<([u8; 32], u16), ConstU32<64>>,
+     }
+ 
+@@ -465,19 +495,19 @@ pub mod pallet {
                                  )
                              }
                          }
+-                        if let Some((message, signature)) = Self::sign_oracle_message(&signer) {
++                        if let Some(signatures) = Self::sign_oracle_messages(&signer) {
+                             let result = signer.send_single_signed_transaction(
+                                 &signer_account,
+-                                Call::store_signature { message, signature },
++                                Call::store_signatures { signatures },
+                             );
+                             if result.is_some_and(|res| res.is_ok()) {
+                                 log::info!(
+-                                    "[{:?}]: submit store signature transaction success.",
++                                    "[{:?}]: submit store signatures transaction success.",
+                                     signer_account.id
+                                 )
+                             } else {
+                                 log::error!(
+-                                    "[{:?}]: submit store signature transaction failure.",
++                                    "[{:?}]: submit store signatures transaction failure.",
+                                     signer_account.id
+                                 )
+                             }
+@@ -504,8 +534,7 @@ pub mod pallet {
+                 // Get timestamp in milliseconds
+                 let timestamp = timestamp::Pallet::<T>::get().saturated_into::<u64>();
+ 
+-                let mut all_rewards: BTreeMap<[u8; 32], u16> = BTreeMap::new();
+-                let prices_and_age = trade_pairs
++                let prices_age_and_rewards = trade_pairs
+                     .into_iter()
+                     .enumerate()
+                     .map(|(index, trade_pair)| {
+@@ -522,7 +551,7 @@ pub mod pallet {
+                                 }
+                             })
+                             .collect();
+-                        let (price, age, rewards) = if min_nodes_for_trusted_aggregation <= participating_nodes {
++                        if min_nodes_for_trusted_aggregation <= participating_nodes {
+                             log::info!(
+                                 "{:?} nodes submitted a price. Aggregating median price ...",
+                                 participating_nodes
+@@ -542,33 +571,18 @@ pub mod pallet {
+                         }.or_else(|| {
+                             let (price, age) = Self::get_previous_median(index)?;
+                             Some((price, age, BoundedVec::new()))
+-                        })?;
+-
+-                        rewards.into_iter().for_each(|acc| {
+-                            if let Some(existing) = all_rewards.get_mut(&acc) {
+-                                *existing += 1;
+-                            } else {
+-                                all_rewards.insert(acc, 1);
+-                            }
+-                        });
+-
+-                        Some((price, age))
++                        })
+                     })
+                     .collect();
+ 
+-                let oracle_message = OracleMessage {
+-                    prices_and_age: BoundedVec::truncate_from(prices_and_age),
++                let new_state = AggregationState {
++                    prices_age_and_rewards: BoundedVec::truncate_from(prices_age_and_rewards),
+                     timestamp,
+-                    rewards: BoundedVec::truncate_from(all_rewards.into_iter().collect()),
+                 };
+-                Aggregation::<T>::put(&oracle_message);
+-                log::info!(
+-                    "Aggregate message for block {:?} is {:?}",
+-                    n,
+-                    &oracle_message,
+-                );
++                Aggregation::<T>::put(&new_state);
++                log::info!("Aggregate state for block {:?} is {:?}", n, &new_state,);
+                 Self::deposit_event(Event::Status {
+-                    message: oracle_message,
++                    current_state: new_state,
+                     block: n,
+                 })
+             } else {
+@@ -628,8 +642,8 @@ impl<T: Config> Pallet<T> {
+     }
+ 
+     fn get_previous_median(trade_pair_index: usize) -> Option<(u32, u16)> {
+-        let message = Aggregation::<T>::get()?;
+-        let (price, age) = message.prices_and_age[trade_pair_index]?;
++        let aggregation_state = Aggregation::<T>::get()?;
++        let (price, age, _) = aggregation_state.prices_age_and_rewards[trade_pair_index].clone()?;
+         Some((price, age + 1))
+     }
+ 
+@@ -772,31 +786,111 @@ impl<T: Config> Pallet<T> {
+         }
+     }
+ 
+-    fn sign_oracle_message(
++    fn sign_oracle_messages(
+         signer: &Signer<T, <T as Config>::AuthorityId, frame_system::offchain::ForAll>,
+-    ) -> Option<(OracleMessage, T::Signature)> {
+-        let message = Aggregation::<T>::get()?;
+-
+-        log::info!("Prepared Message: {:?}", message);
+-        let cbor_hex: Box<str> = message.to_cardano_cbor().encode_hex();
+-        log::debug!("Message cbor: {}", cbor_hex);
+-
+-        let msg_hash_digest = message.cardano_cbor_hash();
+-        let msg_hash_hex: Box<str> = msg_hash_digest.encode_hex();
+-        log::debug!("Message hash: {}", msg_hash_hex);
+-
+-        let signed_message = match signer.sign_message(&msg_hash_digest).pop() {
+-            Some(signed) => signed,
+-            _none => {
+-                log::error!("Couldn't retrieve signature");
+-                return None;
+-            }
+-        };
++    ) -> Option<Vec<(OracleMessage, T::Signature)>> {
++        let all_trade_pairs = TradePairs::<T>::get().or_else(|| {
++            log::error!("Error fetching TradePairs");
++            None
++        })?;
++        let channels_to_trade_pairs = ChannelsToTradePairs::<T>::get().or_else(|| {
++            log::error!("Error fetching ChannelsToTradePairs");
++            None
++        })?;
++        let trade_pairs_dict: BTreeMap<usize, TradePair> =
++            BTreeMap::from_iter(all_trade_pairs.clone().into_iter().enumerate());
++        let channels_to_trade_pairs: Vec<(ChannelId, Vec<TradePair>)> = channels_to_trade_pairs
++            .into_iter()
++            .map(|(chan, pairs_index)| {
++                let trade_pairs = pairs_index
++                    .into_iter()
++                    .filter_map(|i| Some(trade_pairs_dict.get(&(i as usize))?.clone()))
++                    .collect();
++                (chan, trade_pairs)
++            })
++            .collect();
++
++        let current_state = Aggregation::<T>::get().or_else(|| {
++            log::error!("Error fetching current state");
++            None
++        })?;
++        log::debug!("Current state: {:?}", &current_state);
++
++        Some(
++            channels_to_trade_pairs
++                .into_iter()
++                .filter_map(|(chan, chan_trade_pairs)| {
++                    log::debug!("Signing for channel: {:?}", &chan);
++                    let message = Self::convert_aggregation_state_to_oracle_message(
++                        &current_state,
++                        &all_trade_pairs,
++                        chan,
++                        chan_trade_pairs,
++                    );
++
++                    log::debug!("Prepared Message: {:?}", message);
++                    let cbor_hex: Box<str> = message.to_cardano_cbor().encode_hex();
++                    log::debug!("Message cbor: {}", cbor_hex);
++
++                    let msg_hash_digest = message.cardano_cbor_hash();
++                    let msg_hash_hex: Box<str> = msg_hash_digest.encode_hex();
++                    log::debug!("Message hash: {}", msg_hash_hex);
++
++                    let signed_message = match signer.sign_message(&msg_hash_digest).pop() {
++                        Some(signed) => signed,
++                        _none => {
++                            log::error!("Couldn't retrieve signature");
++                            return None;
++                        }
++                    };
+ 
+-        log::info!("Account signed: {:?}", signed_message.0.id);
+-        let hex_signature: Box<str> = signed_message.1.encode().encode_hex();
+-        log::info!("Signed message: {}", hex_signature);
++                    log::debug!("Account signed: {:?}", signed_message.0.id);
++                    let hex_signature: Box<str> = signed_message.1.encode().encode_hex();
++                    log::debug!("Signed message: {}", hex_signature);
+ 
+-        Some((message, signed_message.1))
++                    Some((message, signed_message.1))
++                })
++                .collect(),
++        )
++    }
++
++    fn convert_aggregation_state_to_oracle_message(
++        aggregation_state: &AggregationState,
++        all_trade_pairs: &Vec<TradePair>,
++        channel_id: ChannelId,
++        this_trade_pairs: Vec<TradePair>,
++    ) -> OracleMessage {
++        let state_mapping: BTreeMap<
++            &TradePair,
++            Option<(u32, u16, BoundedVec<[u8; 32], ConstU32<64>>)>,
++        > = BTreeMap::from_iter(
++            all_trade_pairs
++                .into_iter()
++                .zip(aggregation_state.prices_age_and_rewards.clone()),
++        );
++
++        let mut this_rewards: BTreeMap<[u8; 32], u16> = BTreeMap::new();
++        let prices_and_age = this_trade_pairs
++            .into_iter()
++            .map(|trade_pair| {
++                let (price, age, rewards) = state_mapping.get(&trade_pair)?.clone()?;
++                rewards.into_iter().for_each(|acc| {
++                    if let Some(existing) = this_rewards.get_mut(&acc) {
++                        *existing += 1;
 +                    } else {
-+                        log::error!("Error fetching trade pairs configuration.")
-                     }
-                 }
-                 Some(_accounts) => log::error!("More than one account. Expected only one"),
++                        this_rewards.insert(acc, 1);
++                    }
++                });
++
++                Some((price, age))
++            })
++            .collect();
++
++        OracleMessage {
++            channel_id,
++            prices_and_age: BoundedVec::truncate_from(prices_and_age),
++            timestamp: aggregation_state.timestamp,
++            rewards: BoundedVec::truncate_from(this_rewards.into_iter().collect()),
++        }
+     }
+ }

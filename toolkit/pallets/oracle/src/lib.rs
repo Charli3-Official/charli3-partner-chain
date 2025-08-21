@@ -191,26 +191,29 @@ pub mod pallet {
 
         #[pallet::call_index(1)]
         #[pallet::weight((0, Pays::No))]
-        pub fn store_signature(
+        pub fn store_signatures(
             origin: OriginFor<T>,
-            message: OracleMessage,
-            signature: T::Signature,
+            signatures: Vec<(OracleMessage, T::Signature)>,
         ) -> DispatchResult {
             let who: T::AccountId = ensure_signed(origin)?;
             let when = <frame_system::Pallet<T>>::block_number();
 
-            let mut signature_bytes: AllocVec<u8> = signature.encode();
-            signature_bytes.remove(0);
-            let signature_encoded: [u8; 64] = signature_bytes
-                .try_into()
-                .expect("signature buffer should be exactly 64 bytes");
-            SignatureStorage::<T>::insert(message.timestamp, &who, signature_encoded);
+            signatures
+                .clone()
+                .into_iter()
+                .for_each(|(message, signature)| {
+                    let mut signature_bytes: AllocVec<u8> = signature.encode();
+                    signature_bytes.remove(0);
+                    let signature_encoded: [u8; 64] = signature_bytes
+                        .try_into()
+                        .expect("signature buffer should be exactly 64 bytes");
+                    SignatureStorage::<T>::insert(message.timestamp, &who, signature_encoded);
+                });
 
-            Self::deposit_event(Event::StoredSignature {
-                message,
+            Self::deposit_event(Event::StoredSignatures {
                 who,
                 when,
-                signature,
+                signatures,
             });
 
             Ok(())
