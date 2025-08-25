@@ -1,8 +1,14 @@
 diff a/toolkit/pallets/oracle/src/price_providers/mod.rs b/toolkit/pallets/oracle/src/price_providers/mod.rs	(rejected hunks)
-@@ -5,4 +5,4 @@ pub use generic::GenericApiProvider;
+@@ -1,8 +1,9 @@
+-use sp_runtime::offchain::http;
+-
+ pub mod generic;
+ pub use generic::GenericApiProvider;
++use sp_runtime::sp_std::vec::Vec;
++
++use crate::config::TradePair;
  
  pub trait PriceProvider {
-     fn fetch_price() -> Result<u32, http::Error>;
--}
-\ No newline at end of file
-+}
+-    fn fetch_price() -> Result<u32, http::Error>;
++    fn fetch_prices(trade_pairs: Vec<TradePair>) -> Option<Vec<(TradePair, u32)>>;
+ }

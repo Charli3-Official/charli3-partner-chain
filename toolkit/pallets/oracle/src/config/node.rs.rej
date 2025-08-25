@@ -1,28 +1,24 @@
 diff a/toolkit/pallets/oracle/src/config/node.rs b/toolkit/pallets/oracle/src/config/node.rs	(rejected hunks)
-@@ -3,10 +3,26 @@ use scale_info::{prelude::string::String, TypeInfo};
- use serde::{Deserialize, Serialize};
- use sp_std::{str, vec, vec::Vec};
- 
-+const HTTP_REQUEST_TIMEOUT_MILLIS: u64 = 4000;
-+
-+fn default_http_request_timeout_millis() -> u64 {
-+    HTTP_REQUEST_TIMEOUT_MILLIS
-+}
-+
-+const HTTP_RESPONSE_WAIT_MILLIS: u64 = 3000;
-+
-+fn default_http_response_wait_millis() -> u64 {
-+    HTTP_RESPONSE_WAIT_MILLIS
-+}
-+
- #[derive(Serialize, Deserialize, Debug, Clone, Encode, Decode, TypeInfo, Default)]
- pub struct NodeConfig {
-     #[serde(default = "default_sources")]
-     pub sources: Vec<DataSource>,
-+    #[serde(default = "default_http_request_timeout_millis")]
-+    pub http_request_timeout_millis: u64,
-+    #[serde(default = "default_http_response_wait_millis")]
-+    pub http_response_wait_millis: u64,
+@@ -128,6 +128,7 @@ pub struct DataSource {
+     pub name: String,
+     pub url: String,
+     pub json_path: Vec<JsonPathElement>,
++    #[serde(default)]
+     pub headers: Vec<(String, String)>,
  }
  
- #[derive(Serialize, Deserialize, Debug, Clone, Encode, Decode, TypeInfo)]
+@@ -138,14 +139,6 @@ pub enum JsonPathElement {
+     Index(u32),
+ }
+ 
+-impl NodeConfig {
+-    #[inline]
+-    pub fn from_json_str(json_str: &str) -> Result<Self, &'static str> {
+-        serde_json::from_str(json_str).map_err(|_| "Failed to parse JSON")
+-    }
+-}
+-
+-#[inline]
+ fn default_sources() -> BTreeMap<TradePair, Vec<DataSource>> {
+     BTreeMap::from([(
+         TradePair::from_ticker("ADA-USD"),
