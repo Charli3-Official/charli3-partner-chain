@@ -1,47 +1,33 @@
 diff a/toolkit/pallets/oracle/src/price_providers/generic.rs b/toolkit/pallets/oracle/src/price_providers/generic.rs	(rejected hunks)
-@@ -4,25 +4,24 @@ use crate::config::{DataSource, JsonPathElement, NodeConfig, TradePair};
- use sp_io::offchain;
- use sp_runtime::offchain::http;
- use sp_runtime::offchain::Duration;
--use sp_runtime::sp_std::{str, vec, vec::Vec};
-+use sp_runtime::sp_std::{vec, vec::Vec};
- use sp_std::collections::btree_map::BTreeMap;
+@@ -60,8 +60,8 @@ impl GenericApiProvider {
+         calculate_median(scaled.clone())
+             .and_then(|m| filter_outliers(scaled, m, 150, 50))
+             .and_then(|(valid, outliers)| {
+-                log::info!(
+-                    "Source aggregation: {} valid prices, {} outliers filtered",
++                log::debug!(
++                    "Stats for aggregation: {} valid prices, {} outliers filtered",
+                     valid.len(),
+                     outliers.len()
+                 );
+@@ -145,7 +145,7 @@ impl PriceProvider for GenericApiProvider {
+                     })
+                     .and_then(|price| {
+                         if Self::validate_price(price) {
+-                            log::info!(
++                            log::debug!(
+                                 "Successfully fetched price {} for pair {:?} source {:?}",
+                                 price,
+                                 &pair,
+@@ -176,7 +176,10 @@ impl PriceProvider for GenericApiProvider {
+         prices
+             .into_iter()
+             .for_each(|(pair, ps)| match Self::aggregate_prices(ps) {
+-                Some(median) => aggregated.push((pair, (median * SCALING_FACTOR as f64) as u32)),
++                Some(median) => {
++                    log::debug!("Succeeded aggregation for trade pair {:?}", pair);
++                    aggregated.push((pair, (median * SCALING_FACTOR as f64) as u32))
++                }
+                 _none => log::error!("Failed to aggregate prices for trade pair {:?}", pair),
+             });
  
- pub struct GenericApiProvider;
- 
- impl GenericApiProvider {
-     #[inline]
--    fn load_config() -> Result<NodeConfig, &'static str> {
-+    fn load_config() -> Option<NodeConfig> {
-         match sp_io::offchain::local_storage_get(
-             sp_core::offchain::StorageKind::PERSISTENT,
-             b"node_config",
-         ) {
--            Some(bytes) => match str::from_utf8(&bytes) {
--                Ok(config_str) => NodeConfig::from_json_str(config_str),
--                Err(_) => Err("Invalid UTF-8 in config"),
--            },
-+            Some(bytes) => serde_json::from_slice(&bytes)
-+                .map_err(|e| log::error!("Failed to load config json: {}", e))
-+                .ok(),
-             _none => {
-                 log::warn!("No node config found in storage, using default configuration");
--                Ok(NodeConfig::default())
-+                Some(NodeConfig::default())
-             }
-         }
-     }
-@@ -79,12 +78,7 @@ impl GenericApiProvider {
- 
- impl PriceProvider for GenericApiProvider {
-     fn fetch_prices(trade_pairs: Vec<TradePair>) -> Option<Vec<(TradePair, u32)>> {
--        let config = Self::load_config()
--            .map_err(|e| {
--                log::error!("Failed to load config: {}", e);
--                ()
--            })
--            .ok()?;
-+        let config = Self::load_config()?;
- 
-         if config.sources.is_empty() {
-             log::error!("No sources configured in oracle config");

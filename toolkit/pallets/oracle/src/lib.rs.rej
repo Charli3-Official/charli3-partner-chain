@@ -1,186 +1,36 @@
 diff a/toolkit/pallets/oracle/src/lib.rs b/toolkit/pallets/oracle/src/lib.rs	(rejected hunks)
-@@ -2,7 +2,6 @@
- 
- pub use pallet::*;
- 
--use codec::alloc::string::{String, ToString};
- use codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
- use frame_support::pallet_prelude::{BoundedVec, ConstU32};
- use frame_system::{
-@@ -23,8 +22,9 @@ mod aggregation;
- mod config;
- mod price_providers;
- 
--use aggregation::{calculate_median, filter_outliers};
--use price_providers::{GenericApiProvider, PriceProvider};
-+use crate::aggregation::{calculate_median, filter_outliers};
-+use crate::config::TradePair;
-+use crate::price_providers::{GenericApiProvider, PriceProvider};
- 
- pub mod crypto {
-     use super::KEY_TYPE;
-@@ -65,7 +65,7 @@ pub mod pallet {
-     use minicbor::encode::Encoder;
-     use scale_info::{prelude::fmt, TypeInfo};
-     use sp_core::hashing::blake2_256;
--    use sp_runtime::{offchain::http, sp_std::str};
-+    use sp_runtime::sp_std::str;
- 
-     #[pallet::pallet]
-     pub struct Pallet<T>(_);
-@@ -106,101 +106,6 @@ pub mod pallet {
+@@ -106,7 +106,9 @@ pub mod pallet {
      pub type ChannelsToTradePairs<T> =
          StorageValue<_, BoundedVec<(ChannelId, BoundedVec<u16, ConstU32<64>>), ConstU32<16>>>;
  
--    /// Trade Pair measures price of base (from) currency in terms of quote (to) currency.
--    /// E.g. ADA-USD (BASE-QUOTE) price tells a price of 1 ADA in USD.
--    #[derive(
--        Clone,
--        Encode,
--        DecodeWithMemTracking,
--        Decode,
--        Eq,
--        PartialEq,
--        Ord,
--        PartialOrd,
--        Debug,
--        MaxEncodedLen,
--        TypeInfo,
--        serde::Serialize,
--        serde::Deserialize,
--    )]
--    #[serde(try_from = "String", into = "String")]
--    pub struct TradePair {
--        /// Base aka from currency, e.g. ADA
--        base_currency: BoundedVec<u8, ConstU32<64>>,
--        /// Quote aka to currency, e.g. USD
--        quote_currency: BoundedVec<u8, ConstU32<64>>,
--    }
--
--    impl TradePair {
--        /// Create a TradePair from a ticker string (e.g., "ADA-USD").
--        /// Accepts delimiters: '_', ' ', '/', '-', '.'.
--        /// Returns a Result to handle parsing errors gracefully.
--        pub fn from_ticker(ticker: &str) -> Self {
--            let parts: Vec<&str> = ticker
--                .split(|c| c == ' ' || c == '/' || c == '-' || c == '.' || c == '_')
--                .collect();
--
--            if parts.len() != 2 {
--                panic!("Invalid ticker format: expected exactly two parts");
--            }
--
--            let base = parts[0];
--            let quote = parts[1];
--
--            // Convert base and quote to BoundedVec<u8, ConstU32<64>>
--            let base_currency = BoundedVec::try_from(base.as_bytes().to_vec())
--                .expect("Base currency exceeds 64 bytes");
--            let quote_currency = BoundedVec::try_from(quote.as_bytes().to_vec())
--                .expect("Quote currency exceeds 64 bytes");
--
--            TradePair {
--                base_currency,
--                quote_currency,
--            }
--        }
--
--        /// Convert the TradePair to a ticker string (e.g., "ADA-USD").
--        /// Uses '-' as the delimiter.
--        /// Panics if the ticker exceeds 128 bytes or if the data is not valid UTF-8.
--        /// Assumes base_currency and quote_currency are valid UTF-8.
--        pub fn to_ticker(&self) -> String {
--            // Convert BoundedVec to Vec<u8> for base and quote
--            let base: Vec<u8> = self.base_currency.clone().into();
--            let quote: Vec<u8> = self.quote_currency.clone().into();
--
--            // Create the ticker by concatenating base, delimiter, and quote
--            let mut ticker = base;
--            ticker.push(b'-'); // Add delimiter
--            ticker.extend(quote);
--
--            // Ensure the result fits within the 128-byte bound
--            let bounded_ticker = BoundedVec::<u8, ConstU32<128>>::try_from(ticker)
--                .expect("Ticker exceeds 128 bytes");
--
--            // Convert to String, assuming valid UTF-8
--            // Safety: We assume base_currency and quote_currency are valid UTF-8
--            // (enforced by from_ticker or extrinsic validation)
--            sp_std::str::from_utf8(&bounded_ticker)
--                .expect("Invalid utf-8")
--                .to_string()
--        }
--    }
--
--    impl From<TradePair> for String {
--        fn from(tp: TradePair) -> Self {
--            tp.to_ticker()
--        }
--    }
--
--    impl TryFrom<String> for TradePair {
--        type Error = &'static str;
--
--        fn try_from(value: String) -> Result<Self, Self::Error> {
--            // You can make from_ticker return Result to avoid panic
--            Ok(Self::from_ticker(&value))
--        }
--    }
--
-     #[derive(Clone, Encode, Decode, Eq, PartialEq, Debug, MaxEncodedLen, TypeInfo)]
+-    #[derive(Clone, Encode, Decode, Eq, PartialEq, Debug, MaxEncodedLen, TypeInfo)]
++    #[derive(
++        Clone, Encode, Decode, Eq, PartialEq, Debug, MaxEncodedLen, DecodeWithMemTracking, TypeInfo,
++    )]
      pub struct OracleConfiguration {
          pub min_nodes_for_trusted_aggregation: u32,
-@@ -441,7 +346,7 @@ pub mod pallet {
+         pub feed_age: u16,
+@@ -342,6 +344,23 @@ pub mod pallet {
+ 
+             Ok(())
+         }
++
++        #[pallet::call_index(2)]
++        #[pallet::weight((0, Pays::No))]
++        pub fn sudo_set_config(
++            origin: OriginFor<T>,
++            config: OracleConfiguration,
++        ) -> DispatchResult {
++            ensure_root(origin)?;
++
++            <MinNodesForTrustedAggregation<T>>::put(&config.min_nodes_for_trusted_aggregation);
++            <FeedAge<T>>::put(&config.feed_age);
++            <OutliersRange<T>>::put(&config.outliers_range);
++            <Divergency<T>>::put(&config.divergency);
++            <TradePairs<T>>::put(&config.trade_pairs);
++
++            Ok(())
++        }
+     }
  
      /// pallet auxiliary methods
-     impl<T: Config> Pallet<T> {
--        pub fn fetch_prices(tickers: Vec<String>) -> Result<Vec<u32>, http::Error> {
-+        pub fn fetch_prices(tickers: Vec<TradePair>) -> Option<Vec<(TradePair, u32)>> {
-             GenericApiProvider::fetch_prices(tickers)
-         }
-     }
-@@ -460,24 +365,13 @@ pub mod pallet {
-                         .with_filter(vec![signer_account.clone().public]);
- 
-                     if let Some(trade_pairs) = TradePairs::<T>::get() {
--                        if let Ok(prices) = Self::fetch_prices(
--                            trade_pairs
--                                .iter()
--                                .map(|tp| tp.to_ticker().to_uppercase())
--                                .collect(),
--                        )
--                        .map_err(|e| {
--                            log::error!(
--                                "[{:?}]: failed to fetch price: {:?}",
--                                signer_account.id,
--                                e
--                            );
-+                        if let Some(prices) = Self::fetch_prices(trade_pairs.into()).or_else(|| {
-+                            log::error!("[{:?}]: failed to fetch prices", signer_account.id,);
-+                            None
-                         }) {
-                             let result = signer.send_single_signed_transaction(
-                                 &signer_account,
--                                Call::store_prices {
--                                    prices: trade_pairs.into_iter().zip(prices).collect(),
--                                },
-+                                Call::store_prices { prices },
-                             );
-                             if result.is_some_and(|res| res.is_ok()) {
-                                 log::info!(
-@@ -764,11 +658,10 @@ impl<T: Config> Pallet<T> {
-             .map(|trade_pair| {
-                 let (price, age, rewards) = state_mapping.get(&trade_pair)?.clone()?;
-                 rewards.into_iter().for_each(|acc| {
--                    if let Some(existing) = this_rewards.get_mut(&acc) {
--                        *existing += 1;
--                    } else {
--                        this_rewards.insert(acc, 1);
--                    }
-+                    this_rewards
-+                        .entry(acc)
-+                        .and_modify(|count| *count += 1)
-+                        .or_insert(1);
-                 });
- 
-                 Some((price, age))
