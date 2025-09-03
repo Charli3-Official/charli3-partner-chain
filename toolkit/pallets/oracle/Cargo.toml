@@ -18,6 +18,7 @@ scale-info = { features = ["derive"], workspace = true }
 frame-support.workspace = true
 frame-system.workspace = true
 pallet-timestamp.workspace = true
+pallet-multisig.workspace = true
 log.workspace = true
 sp-core = { workspace = true }
 sp-io = { workspace = true }
@@ -39,6 +40,7 @@ std = [
 	"frame-support/std",
 	"frame-system/std",
 	"pallet-timestamp/std",
+	"pallet-multisig/std",
 	"sp-core/std",
 	"sp-runtime/std",
 	"scale-info/std",
@@ -52,4 +54,5 @@ try-runtime = [
 	"frame-support/try-runtime",
 	"frame-system/try-runtime",
 	"pallet-timestamp/try-runtime",
+	"pallet-multisig/try-runtime",
 ]
