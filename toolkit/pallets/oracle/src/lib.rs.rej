@@ -1,36 +1,100 @@
 diff a/toolkit/pallets/oracle/src/lib.rs b/toolkit/pallets/oracle/src/lib.rs	(rejected hunks)
-@@ -106,7 +106,9 @@ pub mod pallet {
-     pub type ChannelsToTradePairs<T> =
-         StorageValue<_, BoundedVec<(ChannelId, BoundedVec<u16, ConstU32<64>>), ConstU32<16>>>;
+@@ -102,14 +102,16 @@ pub mod pallet {
  
--    #[derive(Clone, Encode, Decode, Eq, PartialEq, Debug, MaxEncodedLen, TypeInfo)]
-+    #[derive(
-+        Clone, Encode, Decode, Eq, PartialEq, Debug, MaxEncodedLen, DecodeWithMemTracking, TypeInfo,
-+    )]
-     pub struct OracleConfiguration {
+     pub type ChannelId = BoundedVec<u8, ConstU32<64>>;
+ 
++    pub type MessagesConfiguration =
++        BoundedVec<(ChannelId, BoundedVec<u16, ConstU32<64>>), ConstU32<16>>;
++
+     #[pallet::storage]
+-    pub type ChannelsToTradePairs<T> =
+-        StorageValue<_, BoundedVec<(ChannelId, BoundedVec<u16, ConstU32<64>>), ConstU32<16>>>;
++    pub type ChannelsToTradePairs<T> = StorageValue<_, MessagesConfiguration>;
+ 
+     #[derive(
+         Clone, Encode, Decode, Eq, PartialEq, Debug, MaxEncodedLen, DecodeWithMemTracking, TypeInfo,
+     )]
+-    pub struct OracleConfiguration {
++    pub struct ConsensusConfiguration {
          pub min_nodes_for_trusted_aggregation: u32,
          pub feed_age: u16,
-@@ -342,6 +344,23 @@ pub mod pallet {
+         pub outliers_range: u32,
+@@ -154,8 +156,7 @@ pub mod pallet {
+         pub outliers_range: u32,
+         pub divergency: u32,
+         pub trade_pairs: BoundedVec<TradePair, ConstU32<64>>,
+-        pub channels_to_trade_pairs:
+-            BoundedVec<(ChannelId, BoundedVec<u16, ConstU32<64>>), ConstU32<16>>,
++        pub channels_to_trade_pairs: MessagesConfiguration,
+         // Ties `T` to `GenesisConfig` because is needed for `impl<T: Config> BuildGenesisConfig ...`
+         pub _marker: PhantomData<T>,
+     }
+@@ -205,7 +206,8 @@ pub mod pallet {
+             block: BlockNumberFor<T>,
+         },
+         UpdatedConfig {
+-            new_config: OracleConfiguration,
++            consensus_config: ConsensusConfiguration,
++            channels_to_trade_pairs: MessagesConfiguration,
+             block: BlockNumberFor<T>,
+         },
+     }
+@@ -353,19 +355,24 @@ pub mod pallet {
+         #[pallet::weight((0, Pays::No))]
+         pub fn sudo_set_config(
+             origin: OriginFor<T>,
+-            config: OracleConfiguration,
++            consensus_config: ConsensusConfiguration,
++            channels_to_trade_pairs: MessagesConfiguration,
+         ) -> DispatchResult {
+             ensure_root(origin)?;
+             let when = <frame_system::Pallet<T>>::block_number();
  
-             Ok(())
-         }
-+
-+        #[pallet::call_index(2)]
-+        #[pallet::weight((0, Pays::No))]
-+        pub fn sudo_set_config(
-+            origin: OriginFor<T>,
-+            config: OracleConfiguration,
-+        ) -> DispatchResult {
-+            ensure_root(origin)?;
-+
-+            <MinNodesForTrustedAggregation<T>>::put(&config.min_nodes_for_trusted_aggregation);
-+            <FeedAge<T>>::put(&config.feed_age);
-+            <OutliersRange<T>>::put(&config.outliers_range);
-+            <Divergency<T>>::put(&config.divergency);
-+            <TradePairs<T>>::put(&config.trade_pairs);
-+
-+            Ok(())
-+        }
+-            <MinNodesForTrustedAggregation<T>>::put(&config.min_nodes_for_trusted_aggregation);
+-            <FeedAge<T>>::put(&config.feed_age);
+-            <OutliersRange<T>>::put(&config.outliers_range);
+-            <Divergency<T>>::put(&config.divergency);
+-            <TradePairs<T>>::put(&config.trade_pairs);
++            <MinNodesForTrustedAggregation<T>>::put(
++                &consensus_config.min_nodes_for_trusted_aggregation,
++            );
++            <FeedAge<T>>::put(&consensus_config.feed_age);
++            <OutliersRange<T>>::put(&consensus_config.outliers_range);
++            <Divergency<T>>::put(&consensus_config.divergency);
++            <TradePairs<T>>::put(&consensus_config.trade_pairs);
++            <ChannelsToTradePairs<T>>::put(&channels_to_trade_pairs);
+ 
+             Self::deposit_event(Event::UpdatedConfig {
+-                new_config: config,
++                consensus_config,
++                channels_to_trade_pairs,
+                 block: when,
+             });
+ 
+@@ -442,7 +449,7 @@ pub mod pallet {
+ 
+         fn on_finalize(n: BlockNumberFor<T>) {
+             log::info!("Aggregating median price for block {:?}", n);
+-            if let Some(OracleConfiguration {
++            if let Some(ConsensusConfiguration {
+                 min_nodes_for_trusted_aggregation,
+                 feed_age,
+                 outliers_range,
+@@ -566,7 +573,7 @@ impl<T: Config> Pallet<T> {
+         Some((price, age + 1))
      }
  
-     /// pallet auxiliary methods
+-    fn get_oracle_config() -> Option<OracleConfiguration> {
++    fn get_oracle_config() -> Option<ConsensusConfiguration> {
+         let min_nodes_for_trusted_aggregation =
+             MinNodesForTrustedAggregation::<T>::get().or_else(|| {
+                 log::error!("Error fetching MinNodesForTrustedAggregation");
+@@ -589,7 +596,7 @@ impl<T: Config> Pallet<T> {
+             None
+         })?;
+ 
+-        Some(OracleConfiguration {
++        Some(ConsensusConfiguration {
+             min_nodes_for_trusted_aggregation,
+             feed_age,
+             outliers_range,
