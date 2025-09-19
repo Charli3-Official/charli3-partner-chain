@@ -1,33 +1,49 @@
 diff a/toolkit/pallets/oracle/src/price_providers/generic.rs b/toolkit/pallets/oracle/src/price_providers/generic.rs	(rejected hunks)
-@@ -60,8 +60,8 @@ impl GenericApiProvider {
-         calculate_median(scaled.clone())
-             .and_then(|m| filter_outliers(scaled, m, 150, 50))
-             .and_then(|(valid, outliers)| {
--                log::info!(
--                    "Source aggregation: {} valid prices, {} outliers filtered",
-+                log::debug!(
-+                    "Stats for aggregation: {} valid prices, {} outliers filtered",
-                     valid.len(),
-                     outliers.len()
-                 );
-@@ -145,7 +145,7 @@ impl PriceProvider for GenericApiProvider {
-                     })
-                     .and_then(|price| {
-                         if Self::validate_price(price) {
--                            log::info!(
-+                            log::debug!(
-                                 "Successfully fetched price {} for pair {:?} source {:?}",
-                                 price,
-                                 &pair,
-@@ -176,7 +176,10 @@ impl PriceProvider for GenericApiProvider {
+@@ -77,15 +77,17 @@ impl GenericApiProvider {
+ }
+ 
+ impl PriceProvider for GenericApiProvider {
+-    fn fetch_prices(trade_pairs: Vec<TradePair>) -> Option<Vec<(TradePair, u32)>> {
++    fn fetch_prices(
++        trade_pairs: Vec<TradePair>,
++        external_prices: Vec<(TradePair, f64)>,
++    ) -> Option<Vec<(TradePair, u32)>> {
+         let config = Self::load_config()?;
+ 
+         if config.sources.is_empty() {
+-            log::error!("No sources configured in oracle config");
+-            return None;
++            log::warn!("No sources configured in oracle config");
+         }
+ 
+-        // 1. Start all requests
++        // Start all requests
+         let mut requests_sources: Vec<(TradePair, DataSource)> = Vec::new();
+         let mut pending_requests: Vec<http::PendingRequest> = Vec::new();
+         for pair in trade_pairs.iter() {
+@@ -106,7 +108,7 @@ impl PriceProvider for GenericApiProvider {
+             }
+         }
+ 
+-        // 2. Collect all responses
++        // Collect all responses
+         let deadline =
+             offchain::timestamp().add(Duration::from_millis(config.http_response_wait_millis));
+         let finished: Vec<Result<Result<http::Response, http::Error>, http::PendingRequest>> =
+@@ -170,8 +172,15 @@ impl PriceProvider for GenericApiProvider {
+                 }
+             }
+         }
++        // Add external prices
++        for (pair, price) in external_prices {
++            prices
++                .entry(pair)
++                .and_modify(|xs| xs.push(price))
++                .or_insert(vec![price]);
++        }
+ 
+-        // 3. Aggregate prices
++        // Aggregate prices
+         let mut aggregated = Vec::new();
          prices
              .into_iter()
-             .for_each(|(pair, ps)| match Self::aggregate_prices(ps) {
--                Some(median) => aggregated.push((pair, (median * SCALING_FACTOR as f64) as u32)),
-+                Some(median) => {
-+                    log::debug!("Succeeded aggregation for trade pair {:?}", pair);
-+                    aggregated.push((pair, (median * SCALING_FACTOR as f64) as u32))
-+                }
-                 _none => log::error!("Failed to aggregate prices for trade pair {:?}", pair),
-             });
- 
