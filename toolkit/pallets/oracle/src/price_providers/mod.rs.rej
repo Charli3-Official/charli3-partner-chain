@@ -1,8 +1,11 @@
 diff a/toolkit/pallets/oracle/src/price_providers/mod.rs b/toolkit/pallets/oracle/src/price_providers/mod.rs	(rejected hunks)
-@@ -8,5 +8,5 @@ pub trait PriceProvider {
-     fn fetch_prices(
-         trade_pairs: Vec<TradePair>,
-         external_prices: Vec<(TradePair, f64)>,
--    ) -> Option<Vec<(TradePair, u32)>>;
-+    ) -> Vec<(TradePair, u32)>;
+@@ -5,8 +5,5 @@ use sp_runtime::sp_std::vec::Vec;
+ use crate::config::TradePair;
+ 
+ pub trait PriceProvider {
+-    fn fetch_prices(
+-        trade_pairs: Vec<TradePair>,
+-        external_prices: Vec<(TradePair, f64)>,
+-    ) -> Vec<(TradePair, u32)>;
++    fn fetch_prices(trade_pairs: Vec<TradePair>) -> Vec<(TradePair, u32)>;
  }
