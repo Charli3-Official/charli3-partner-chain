@@ -174,7 +174,7 @@ pub mod pallet {
     impl<T: Config> Pallet<T> {
         #[pallet::call_index(0)]
         #[pallet::weight((0, Pays::No))]
-        pub fn store_prices(origin: OriginFor<T>, prices: Vec<(TradePair, u32)>) -> DispatchResult {
+        pub fn store_prices(origin: OriginFor<T>, prices: Vec<(TradePair, u64)>) -> DispatchResult {
             let who = ensure_signed(origin)?;
             let when = <frame_system::Pallet<T>>::block_number();
             prices.iter().for_each(|(tp, price)| {

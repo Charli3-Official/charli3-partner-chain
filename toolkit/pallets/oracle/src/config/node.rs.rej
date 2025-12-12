@@ -1,33 +1,25 @@
 diff a/toolkit/pallets/oracle/src/config/node.rs b/toolkit/pallets/oracle/src/config/node.rs	(rejected hunks)
-@@ -81,11 +81,11 @@ impl TradePair {
-         }
-     }
+@@ -18,14 +18,22 @@ fn default_http_response_wait_millis() -> u64 {
+     HTTP_RESPONSE_WAIT_MILLIS
+ }
  
--    /// Convert the TradePair to a ticker string (e.g., "ADA-USD").
-+    /// Convert the TradePair to a ticker bytes (e.g., "ADA-USD").
-     /// Uses '-' as the delimiter.
-     /// Panics if the ticker exceeds 128 bytes or if the data is not valid UTF-8.
-     /// Assumes base_currency and quote_currency are valid UTF-8.
--    pub fn to_ticker(&self) -> String {
-+    pub fn to_ticker_bytes(&self) -> BoundedVec<u8, sp_core::ConstU32<128>> {
-         // Convert BoundedVec to Vec<u8> for base and quote
-         let base: Vec<u8> = self.base_currency.clone().into();
-         let quote: Vec<u8> = self.quote_currency.clone().into();
-@@ -96,8 +96,15 @@ impl TradePair {
-         ticker.extend(quote);
- 
-         // Ensure the result fits within the 128-byte bound
--        let bounded_ticker =
--            BoundedVec::<u8, ConstU32<128>>::try_from(ticker).expect("Ticker exceeds 128 bytes");
-+        BoundedVec::<u8, ConstU32<128>>::try_from(ticker).expect("Ticker exceeds 128 bytes")
-+    }
++pub const DEFAULT_PRICE_CACHE_TTL_MS: u64 = 5 * 60 * 1000; // 5 minutes TTL
 +
-+    /// Convert the TradePair to a ticker string (e.g., "ADA-USD").
-+    /// Uses '-' as the delimiter.
-+    /// Panics if the ticker exceeds 128 bytes or if the data is not valid UTF-8.
-+    /// Assumes base_currency and quote_currency are valid UTF-8.
-+    pub fn to_ticker(&self) -> String {
-+        let bounded_ticker = self.to_ticker_bytes();
++fn default_price_cache_ttl_millis() -> u64 {
++    DEFAULT_PRICE_CACHE_TTL_MS
++}
++
+ #[derive(Serialize, Deserialize, Debug, Clone, Encode, Decode, TypeInfo, Default)]
+-pub struct NodeConfig {
++pub struct PriceProviderConfig {
+     #[serde(default = "default_sources")]
+     pub sources: BTreeMap<TradePair, Vec<DataSource>>,
+     #[serde(default = "default_http_request_timeout_millis")]
+     pub http_request_timeout_millis: u64,
+     #[serde(default = "default_http_response_wait_millis")]
+     pub http_response_wait_millis: u64,
++    #[serde(default = "default_price_cache_ttl_millis")]
++    pub price_cache_ttl_millis: u64,
+ }
  
-         // Convert to String, assuming valid UTF-8
-         // Safety: We assume base_currency and quote_currency are valid UTF-8
+ /// Trade Pair measures price of base (from) currency in terms of quote (to) currency.

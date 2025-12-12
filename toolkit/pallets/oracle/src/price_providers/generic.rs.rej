@@ -1,76 +1,97 @@
 diff a/toolkit/pallets/oracle/src/price_providers/generic.rs b/toolkit/pallets/oracle/src/price_providers/generic.rs	(rejected hunks)
-@@ -1,12 +1,15 @@
+@@ -1,5 +1,6 @@
  use super::PriceProvider;
- use crate::aggregation::{calculate_median, filter_outliers, SCALING_FACTOR};
- use crate::config::{DataSource, JsonPathElement, NodeConfig, TradePair};
-+use codec::Decode;
- use sp_io::offchain;
- use sp_runtime::offchain::http;
- use sp_runtime::offchain::Duration;
- use sp_runtime::sp_std::{vec, vec::Vec};
- use sp_std::collections::btree_map::BTreeMap;
- 
-+pub const PRICE_CACHE_TTL_MS: u64 = 5 * 60 * 1000; // 5 minutes TTL
-+
- pub struct GenericApiProvider;
- 
- impl GenericApiProvider {
-@@ -74,13 +77,54 @@ impl GenericApiProvider {
-     const fn validate_price(price: f64) -> bool {
-         price > 0.0
+-use crate::aggregation::{calculate_median, filter_outliers, SCALING_FACTOR};
++use crate::aggregation::statistics::Rational;
++use crate::aggregation::{calculate_median, SCALING_FACTOR};
+ use crate::config::{
+     DataSource, JsonPathElement, PriceProviderConfig, TradePair, DEFAULT_PRICE_CACHE_TTL_MS,
+ };
+@@ -51,26 +52,22 @@ impl GenericApiProvider {
+         }
      }
-+
-+    fn fetch_cached_prices(trade_pairs: Vec<TradePair>) -> Vec<(TradePair, f64)> {
-+        let mut prices_from_cache = Vec::new();
-+        for ticker in trade_pairs {
-+            let now = sp_io::offchain::timestamp().unix_millis();
-+            match sp_io::offchain::local_storage_get(
-+                sp_core::offchain::StorageKind::PERSISTENT,
-+                &ticker.to_ticker_bytes(),
-+            ) {
-+                Some(entry_bytes) => match <(f64, u64)>::decode(&mut &entry_bytes[..]) {
-+                    Ok((price, timestamp)) => {
-+                        if now - timestamp < PRICE_CACHE_TTL_MS {
-+                            log::info!(
-+                                    "Decoded valid cached price for {} from offchain storage: {} (age: {}ms)",
-+                                    ticker.to_ticker(),
-+                                    price,
-+                                    now - timestamp
-+                                );
-+                            prices_from_cache.push((ticker, price));
-+                        } else {
-+                            log::warn!(
-+                                "Cached price for {} expired (age: {}ms)",
-+                                ticker.to_ticker(),
-+                                now - timestamp
-+                            );
-+                        }
-+                    }
-+                    Err(e) => {
-+                        log::error!("Failed to decode price for {}: {:?}", ticker.to_ticker(), e);
-+                    }
-+                },
-+                _none => {
-+                    log::warn!(
-+                        "Couldn't fetch price from offchain storage for {}",
-+                        ticker.to_ticker()
-+                    );
+ 
+-    fn aggregate_prices(mut prices: Vec<f64>) -> Option<f64> {
++    fn aggregate_prices(mut prices: Vec<f64>) -> Option<u64> {
+         if prices.is_empty() {
+             return None;
+         }
+         prices.sort_by(|a, b| a.partial_cmp(b).unwrap_or(core::cmp::Ordering::Equal));
+-        let scaled: Vec<u32> = prices
+-            .iter()
+-            .map(|&p| (p * SCALING_FACTOR as f64) as u32)
+-            .collect();
+-        calculate_median(scaled.clone())
+-            .and_then(|m| filter_outliers(scaled, m, 150, 50))
+-            .and_then(|(valid, outliers)| {
+-                log::debug!(
+-                    "Stats for aggregation: {} valid prices, {} outliers filtered",
+-                    valid.len(),
+-                    outliers.len()
+-                );
+-                calculate_median(valid)
++        let scaled: Vec<u64> = prices
++            .into_iter()
++            .filter_map(|price| match price_to_u64(price) {
++                Ok(converted) => Some(converted),
++                Err(e) => {
++                    log::error!("Failed to convert price: {}", e);
++                    None
 +                }
-+            }
-+        }
-+        prices_from_cache
-+    }
+             })
+-            .map(|m| m as f64 / SCALING_FACTOR as f64)
++            .collect();
++        calculate_median(scaled)
+     }
+ 
+     #[inline]
+@@ -127,7 +124,7 @@ impl GenericApiProvider {
  }
  
  impl PriceProvider for GenericApiProvider {
--    fn fetch_prices(
--        trade_pairs: Vec<TradePair>,
--        external_prices: Vec<(TradePair, f64)>,
--    ) -> Vec<(TradePair, u32)> {
-+    fn fetch_prices(trade_pairs: Vec<TradePair>) -> Vec<(TradePair, u32)> {
-+        // Load external prices from cache
-+        let external_prices = Self::fetch_cached_prices(trade_pairs.clone());
-+
+-    fn fetch_prices(trade_pairs: Vec<TradePair>) -> Vec<(TradePair, u32)> {
++    fn fetch_prices(trade_pairs: Vec<TradePair>) -> Vec<(TradePair, u64)> {
          // Load Node Api Provider Config
-         let config = match Self::load_config() {
-             Some(cfg) => cfg,
+         let optional_config = Self::load_config();
+ 
+@@ -142,7 +139,17 @@ impl PriceProvider for GenericApiProvider {
+                 log::warn!("Node Api Provider Config not found — using only external prices");
+                 return external_prices
+                     .into_iter()
+-                    .map(|(pair, price)| (pair, (price * SCALING_FACTOR as f64) as u32))
++                    .filter_map(|(pair, price)| match price_to_u64(price) {
++                        Ok(converted) => Some((pair, converted)),
++                        Err(e) => {
++                            log::error!(
++                                "Failed to convert external price for pair {:?}: {}",
++                                pair,
++                                e
++                            );
++                            None
++                        }
++                    })
+                     .collect();
+             }
+         };
+@@ -251,7 +258,7 @@ impl PriceProvider for GenericApiProvider {
+             .for_each(|(pair, ps)| match Self::aggregate_prices(ps) {
+                 Some(median) => {
+                     log::debug!("Succeeded aggregation for trade pair {:?}", pair);
+-                    aggregated.push((pair, (median * SCALING_FACTOR as f64) as u32))
++                    aggregated.push((pair, median))
+                 }
+                 _none => log::error!("Failed to aggregate prices for trade pair {:?}", pair),
+             });
+@@ -259,3 +266,12 @@ impl PriceProvider for GenericApiProvider {
+         aggregated
+     }
+ }
++
++pub fn price_to_u64(price: f64) -> Result<u64, &'static str> {
++    let rational =
++        Rational::approximate_float_unsigned(price).ok_or("Failed to convert f64 to rational")?;
++
++    let scaled = (rational * SCALING_FACTOR).round().to_integer();
++
++    u64::try_from(scaled).map_err(|_| "Overflow: too large for u64")
++}
