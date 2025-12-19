@@ -1,88 +1,11 @@
 diff a/toolkit/pallets/oracle/src/lib.rs b/toolkit/pallets/oracle/src/lib.rs	(rejected hunks)
-@@ -127,7 +127,7 @@ pub mod pallet {
-         Key1 = TradePair,
-         Hasher2 = Identity,
-         Key2 = T::AccountId,
--        Value = (u32, BlockNumberFor<T>),
-+        Value = (u64, BlockNumberFor<T>),
-         QueryKind = OptionQuery,
-     >;
+@@ -252,6 +252,9 @@ pub mod pallet {
+             // Start main array
+             encoder.begin_array().unwrap();
  
-@@ -220,7 +220,7 @@ pub mod pallet {
-         /// Vec of prices and their respective age (in blocks ago),
-         /// Third entry is a vec of byte arrays for rewarded nodes ed25519 public keys
-         pub prices_age_and_rewards:
--            BoundedVec<Option<(u32, u16, BoundedVec<[u8; 32], ConstU32<64>>)>, ConstU32<64>>,
-+            BoundedVec<Option<(u64, u16, BoundedVec<[u8; 32], ConstU32<64>>)>, ConstU32<64>>,
-         /// Aggregation timestamp
-         pub timestamp: u64,
-     }
-@@ -234,7 +234,7 @@ pub mod pallet {
-         /// any subscriber can then use this to identify the message he wanted to bridge.
-         pub channel_id: ChannelId,
-         /// Vec of prices and their respective age (in blocks ago).
--        pub prices_and_age: BoundedVec<Option<(u32, u16)>, ConstU32<64>>,
-+        pub prices_and_age: BoundedVec<Option<(u64, u16)>, ConstU32<64>>,
-         /// Aggregation timestamp.
-         pub timestamp: u64,
-         /// Vec of byte arrays for ed25519 public keys with reward multiplier.
-@@ -259,7 +259,11 @@ pub mod pallet {
-                     Some((price, age)) => {
-                         encoder.tag(minicbor::data::Tag::new(121)).unwrap(); // Some
-                         encoder.begin_array().unwrap();
--                        encoder.u32(*price).unwrap();
-+                        if *price <= u32::MAX as u64 {
-+                            encoder.u32(*price as u32).unwrap();
-+                        } else {
-+                            encoder.u64(*price).unwrap();
-+                        }
-                         encoder.u16(*age).unwrap();
-                         encoder.end().unwrap(); // end tuple
-                     }
-@@ -382,7 +386,7 @@ pub mod pallet {
- 
-     /// pallet auxiliary methods
-     impl<T: Config> Pallet<T> {
--        pub fn fetch_prices(tickers: Vec<TradePair>) -> Vec<(TradePair, u32)> {
-+        pub fn fetch_prices(tickers: Vec<TradePair>) -> Vec<(TradePair, u64)> {
-             GenericApiProvider::fetch_prices(tickers)
-         }
-     }
-@@ -525,15 +529,15 @@ pub mod pallet {
- 
- impl<T: Config> Pallet<T> {
-     fn aggregate(
--        acc_and_prices: Vec<(T::AccountId, u32)>,
-+        acc_and_prices: Vec<(T::AccountId, u64)>,
-         outliers_range: u32,
-         divergency: u32,
--    ) -> Option<(u32, BoundedVec<[u8; 32], ConstU32<64>>)> {
-+    ) -> Option<(u64, BoundedVec<[u8; 32], ConstU32<64>>)> {
-         let mut acc_and_prices =
--            BoundedVec::<(T::AccountId, u32), ConstU32<32>>::truncate_from(acc_and_prices);
-+            BoundedVec::<(T::AccountId, u64), ConstU32<32>>::truncate_from(acc_and_prices);
-         acc_and_prices.sort_by_key(|k| k.1);
-         let sorted_acc_and_prices = acc_and_prices.to_vec();
--        let (_addresses, sorted_prices): (Vec<T::AccountId>, Vec<u32>) =
-+        let (_addresses, sorted_prices): (Vec<T::AccountId>, Vec<u64>) =
-             sorted_acc_and_prices.clone().into_iter().unzip();
-         let median = calculate_median(sorted_prices.clone());
-         let consensus = median.and_then(|midpoint| {
-@@ -572,7 +576,7 @@ impl<T: Config> Pallet<T> {
-         Some((median, rewards))
-     }
- 
--    fn get_previous_median(trade_pair_index: usize) -> Option<(u32, u16)> {
-+    fn get_previous_median(trade_pair_index: usize) -> Option<(u64, u16)> {
-         let aggregation_state = Aggregation::<T>::get()?;
-         let (price, age, _) = aggregation_state.prices_age_and_rewards[trade_pair_index].clone()?;
-         Some((price, age + 1))
-@@ -686,7 +690,7 @@ impl<T: Config> Pallet<T> {
-     ) -> OracleMessage {
-         let state_mapping: BTreeMap<
-             &TradePair,
--            Option<(u32, u16, BoundedVec<[u8; 32], ConstU32<64>>)>,
-+            Option<(u64, u16, BoundedVec<[u8; 32], ConstU32<64>>)>,
-         > = BTreeMap::from_iter(
-             all_trade_pairs
-                 .into_iter()
++            // --- channel_id ---
++            encoder.bytes(&self.channel_id).unwrap(); // encode bytestring
++
+             // --- prices_and_age ---
+             encoder.begin_array().unwrap();
+             for maybe_entry in &self.prices_and_age {

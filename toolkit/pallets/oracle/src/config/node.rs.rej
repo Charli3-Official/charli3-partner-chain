@@ -1,25 +1,28 @@
 diff a/toolkit/pallets/oracle/src/config/node.rs b/toolkit/pallets/oracle/src/config/node.rs	(rejected hunks)
-@@ -18,14 +18,22 @@ fn default_http_response_wait_millis() -> u64 {
-     HTTP_RESPONSE_WAIT_MILLIS
+@@ -24,7 +24,7 @@ fn default_price_cache_ttl_millis() -> u64 {
+     DEFAULT_PRICE_CACHE_TTL_MS
  }
  
-+pub const DEFAULT_PRICE_CACHE_TTL_MS: u64 = 5 * 60 * 1000; // 5 minutes TTL
-+
-+fn default_price_cache_ttl_millis() -> u64 {
-+    DEFAULT_PRICE_CACHE_TTL_MS
-+}
-+
- #[derive(Serialize, Deserialize, Debug, Clone, Encode, Decode, TypeInfo, Default)]
--pub struct NodeConfig {
-+pub struct PriceProviderConfig {
+-#[derive(Serialize, Deserialize, Debug, Clone, Encode, Decode, TypeInfo, Default)]
++#[derive(Serialize, Deserialize, Debug, Clone, Encode, Decode, TypeInfo)]
+ pub struct PriceProviderConfig {
      #[serde(default = "default_sources")]
      pub sources: BTreeMap<TradePair, Vec<DataSource>>,
-     #[serde(default = "default_http_request_timeout_millis")]
-     pub http_request_timeout_millis: u64,
-     #[serde(default = "default_http_response_wait_millis")]
-     pub http_response_wait_millis: u64,
-+    #[serde(default = "default_price_cache_ttl_millis")]
-+    pub price_cache_ttl_millis: u64,
+@@ -36,6 +36,17 @@ pub struct PriceProviderConfig {
+     pub price_cache_ttl_millis: u64,
  }
  
++impl Default for PriceProviderConfig {
++    fn default() -> Self {
++        Self {
++            sources: default_sources(),
++            http_request_timeout_millis: default_http_request_timeout_millis(),
++            http_response_wait_millis: default_http_response_wait_millis(),
++            price_cache_ttl_millis: default_price_cache_ttl_millis(),
++        }
++    }
++}
++
  /// Trade Pair measures price of base (from) currency in terms of quote (to) currency.
+ /// E.g. ADA-USD (BASE-QUOTE) price tells a price of 1 ADA in USD.
+ #[derive(
