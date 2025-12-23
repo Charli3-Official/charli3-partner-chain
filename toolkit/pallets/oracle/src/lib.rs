@@ -176,7 +176,14 @@ pub mod pallet {
         #[pallet::weight((0, Pays::No))]
         pub fn store_prices(origin: OriginFor<T>, prices: Vec<(TradePair, u64)>) -> DispatchResult {
             let who = ensure_signed(origin)?;
+            // Only authorized oracle nodes can submit prices
+            ensure!(
+                AuthorizedOracleNodes::<T>::contains_key(&who),
+                Error::<T>::UnauthorizedNode
+            );
+
             let when = <frame_system::Pallet<T>>::block_number();
+
             prices.iter().for_each(|(tp, price)| {
                 NodesPrices::<T>::insert(tp, &who, (price, when));
             });
@@ -196,6 +203,11 @@ pub mod pallet {
             signatures: Vec<(OracleMessage, T::Signature)>,
         ) -> DispatchResult {
             let who: T::AccountId = ensure_signed(origin)?;
+            ensure!(
+                AuthorizedOracleNodes::<T>::contains_key(&who),
+                Error::<T>::UnauthorizedNode
+            );
+
             let when = <frame_system::Pallet<T>>::block_number();
 
             signatures
