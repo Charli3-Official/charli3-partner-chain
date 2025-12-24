@@ -219,7 +219,11 @@ pub mod pallet {
                     let signature_encoded: [u8; 64] = signature_bytes
                         .try_into()
                         .expect("signature buffer should be exactly 64 bytes");
-                    SignatureStorage::<T>::insert(message.timestamp, &who, signature_encoded);
+                    SignatureStorage::<T>::insert(
+                        (message.channel_id, message.timestamp),
+                        &who,
+                        signature_encoded,
+                    );
                 });
 
             Self::deposit_event(Event::StoredSignatures {
