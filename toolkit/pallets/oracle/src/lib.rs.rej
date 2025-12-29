@@ -1,10 +1,64 @@
 diff a/toolkit/pallets/oracle/src/lib.rs b/toolkit/pallets/oracle/src/lib.rs	(rejected hunks)
-@@ -140,7 +140,7 @@ pub mod pallet {
-     #[pallet::storage]
-     pub type SignatureStorage<T: Config> = StorageDoubleMap<
-         Hasher1 = Twox64Concat,
--        Key1 = u64,
-+        Key1 = (ChannelId, u64),
-         Hasher2 = Identity,
-         Key2 = T::AccountId,
-         Value = [u8; 64],
+@@ -218,6 +218,14 @@ pub mod pallet {
+             channels_to_trade_pairs: MessagesConfiguration,
+             block: BlockNumberFor<T>,
+         },
++        AddedOracleNode {
++            which: T::AccountId,
++            block: BlockNumberFor<T>,
++        },
++        RemovedOracleNode {
++            which: T::AccountId,
++            block: BlockNumberFor<T>,
++        },
+     }
+ 
+     #[pallet::error]
+@@ -409,7 +417,6 @@ pub mod pallet {
+             Ok(())
+         }
+ 
+-        // TODO deposit_event
+         #[pallet::call_index(3)]
+         #[pallet::weight((0, Pays::No))]
+         pub fn sudo_register_oracle_node(
+@@ -417,6 +424,7 @@ pub mod pallet {
+             oracle_account: T::AccountId,
+         ) -> DispatchResult {
+             ensure_root(origin)?;
++            let when = <frame_system::Pallet<T>>::block_number();
+ 
+             // Create the account in storage with zero balance
+             frame_system::Pallet::<T>::inc_providers(&oracle_account);
+@@ -424,6 +432,11 @@ pub mod pallet {
+             // Authorize it as an oracle node
+             AuthorizedOracleNodes::<T>::insert(&oracle_account, ());
+ 
++            Self::deposit_event(Event::AddedOracleNode {
++                which: oracle_account,
++                block: when,
++            });
++
+             Ok(())
+         }
+ 
+@@ -434,6 +447,7 @@ pub mod pallet {
+             oracle_account: T::AccountId,
+         ) -> DispatchResult {
+             ensure_root(origin)?;
++            let when = <frame_system::Pallet<T>>::block_number();
+ 
+             // Remove from authorized nodes
+             AuthorizedOracleNodes::<T>::remove(&oracle_account);
+@@ -449,6 +463,11 @@ pub mod pallet {
+                 );
+             }
+ 
++            Self::deposit_event(Event::RemovedOracleNode {
++                which: oracle_account,
++                block: when,
++            });
++
+             Ok(())
+         }
+     }
