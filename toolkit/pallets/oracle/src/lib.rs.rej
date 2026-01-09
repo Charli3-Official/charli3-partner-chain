@@ -1,64 +1,11 @@
 diff a/toolkit/pallets/oracle/src/lib.rs b/toolkit/pallets/oracle/src/lib.rs	(rejected hunks)
-@@ -218,6 +218,14 @@ pub mod pallet {
-             channels_to_trade_pairs: MessagesConfiguration,
-             block: BlockNumberFor<T>,
-         },
-+        AddedOracleNode {
-+            which: T::AccountId,
-+            block: BlockNumberFor<T>,
-+        },
-+        RemovedOracleNode {
-+            which: T::AccountId,
-+            block: BlockNumberFor<T>,
-+        },
-     }
+@@ -474,7 +474,8 @@ pub mod pallet {
+             }) = Self::get_oracle_config()
+             {
+                 // Get timestamp in milliseconds
+-                let timestamp = timestamp::Pallet::<T>::get().saturated_into::<u64>();
++                let timestamp_ms = timestamp::Pallet::<T>::get().saturated_into::<u64>();
++                let timestamp = (timestamp_ms / 1000) * 1000; // Round to nearest second
  
-     #[pallet::error]
-@@ -409,7 +417,6 @@ pub mod pallet {
-             Ok(())
-         }
- 
--        // TODO deposit_event
-         #[pallet::call_index(3)]
-         #[pallet::weight((0, Pays::No))]
-         pub fn sudo_register_oracle_node(
-@@ -417,6 +424,7 @@ pub mod pallet {
-             oracle_account: T::AccountId,
-         ) -> DispatchResult {
-             ensure_root(origin)?;
-+            let when = <frame_system::Pallet<T>>::block_number();
- 
-             // Create the account in storage with zero balance
-             frame_system::Pallet::<T>::inc_providers(&oracle_account);
-@@ -424,6 +432,11 @@ pub mod pallet {
-             // Authorize it as an oracle node
-             AuthorizedOracleNodes::<T>::insert(&oracle_account, ());
- 
-+            Self::deposit_event(Event::AddedOracleNode {
-+                which: oracle_account,
-+                block: when,
-+            });
-+
-             Ok(())
-         }
- 
-@@ -434,6 +447,7 @@ pub mod pallet {
-             oracle_account: T::AccountId,
-         ) -> DispatchResult {
-             ensure_root(origin)?;
-+            let when = <frame_system::Pallet<T>>::block_number();
- 
-             // Remove from authorized nodes
-             AuthorizedOracleNodes::<T>::remove(&oracle_account);
-@@ -449,6 +463,11 @@ pub mod pallet {
-                 );
-             }
- 
-+            Self::deposit_event(Event::RemovedOracleNode {
-+                which: oracle_account,
-+                block: when,
-+            });
-+
-             Ok(())
-         }
-     }
+                 let prices_age_and_rewards = trade_pairs
+                     .into_iter()
