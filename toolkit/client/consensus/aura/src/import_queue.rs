@@ -153,20 +153,11 @@ where
 	{
 		let inherent_data = create_inherent_data::<B>(&inherent_data_providers).await?;
 
-		let inherent_res = self
+		self
 			.client
 			.runtime_api()
 			.check_inherents(at_hash, block, inherent_data)
 			.map_err(|e| Error::Client(e.into()))?;
-
-		if !inherent_res.ok() {
-			for (i, e) in inherent_res.into_errors() {
-				match inherent_data_providers.try_handle_error(&i, &e).await {
-					Some(res) => res.map_err(Error::Inherent)?,
-					None => return Err(Error::UnknownInherentError(i)),
-				}
-			}
-		}
 
 		Ok(())
 	}

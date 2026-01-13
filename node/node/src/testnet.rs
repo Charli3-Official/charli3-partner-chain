@@ -170,6 +170,7 @@ pub fn testnet_genesis(
 		balances: BalancesConfig {
 			// Configure endowed accounts with initial balance of 1 << 60.
 			balances: endowed_accounts.iter().cloned().map(|k| (k, 1 << 60)).collect(),
+			dev_accounts: None,
 		},
 		aura: AuraConfig { authorities: vec![] },
 		grandpa: GrandpaConfig { authorities: vec![], ..Default::default() },
@@ -207,7 +208,7 @@ pub fn testnet_genesis(
 			min_nodes_for_trusted_aggregation: 2,
 			feed_age: 15,
 			outliers_range: 2,
-			divergence_percentage: 15,
+			divergency: 15,
 			..Default::default()
 		},
 	};

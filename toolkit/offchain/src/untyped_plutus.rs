@@ -18,7 +18,8 @@ pub fn csl_plutus_data_to_uplc(
 }
 
 pub(crate) fn unwrap_one_layer_of_cbor(plutus_script_raw: &[u8]) -> Result<Vec<u8>, anyhow::Error> {
-	let plutus_script_bytes: uplc::PlutusData = minicbor::decode(plutus_script_raw)?;
+	let plutus_script_bytes: uplc::PlutusData = minicbor::decode(plutus_script_raw)
+		.map_err(|e| anyhow!(e.to_string()))?;
 	let plutus_script_bytes = match plutus_script_bytes {
 		uplc::PlutusData::BoundedBytes(bb) => Ok(bb),
 		_ => Err(anyhow!("expected validator raw to be BoundedBytes")),

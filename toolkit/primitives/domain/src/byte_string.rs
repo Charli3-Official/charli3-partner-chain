@@ -1,6 +1,6 @@
 use alloc::vec::Vec;
 use byte_string_derive::byte_string;
-use parity_scale_codec::{Decode, Encode, MaxEncodedLen};
+use parity_scale_codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use scale_info::TypeInfo;
 
 /// Wrapper for bytes that is serialized as hex string
@@ -13,7 +13,7 @@ use scale_info::TypeInfo;
 pub struct ByteString(pub Vec<u8>);
 
 // Constant size variant of `ByteString` that's usable as a runtime type
-#[derive(Eq, Clone, PartialEq, TypeInfo, MaxEncodedLen, Encode, Decode)]
+#[derive(Eq, Clone, PartialEq, TypeInfo, MaxEncodedLen, Encode, Decode, DecodeWithMemTracking)]
 #[byte_string(debug)]
 #[cfg_attr(feature = "std", byte_string(to_hex_string, decode_hex))]
 #[cfg_attr(feature = "serde", byte_string(hex_serialize))]
