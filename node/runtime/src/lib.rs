@@ -317,10 +317,10 @@ impl frame_system::Config for Runtime {
 	type PostTransactions = ();
 }
 
-/// Configure the pallet-oracle in pallets/oracle.
-impl pallet_oracle::Config for Runtime {
+/// Configure the charli3-oracle-core pallet in pallets/oracle.
+impl charli3_oracle_core::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
-	type AuthorityId = pallet_oracle::crypto::OracleAuthId;
+	type AuthorityId = charli3_oracle_core::crypto::OracleAuthId;
 }
 
 impl<LocalCall> frame_system::offchain::CreateSignedTransaction<LocalCall> for Runtime
@@ -551,7 +551,7 @@ construct_runtime!(
 		// The order matters!! pallet_partner_chains_session needs to come last for correct initialization order
 		Session: pallet_partner_chains_session,
 		NativeTokenManagement: pallet_native_token_management,
-		Oracle: pallet_oracle,
+		Oracle: charli3_oracle_core,
 	}
 );
 

@@ -46,7 +46,7 @@ sp-version = { workspace = true }
 sp-storage = { workspace = true }
 sp-weights = { workspace = true }
 authority-selection-inherents = { workspace = true }
-pallet-oracle= { workspace = true }
+charli3-oracle-core = { workspace = true }
 
 hex-literal = { workspace = true }
 
@@ -143,7 +143,7 @@ std = [
 	"pallet-native-token-management/std",
 	"sp-native-token-management/std",
 	"pallet-session-runtime-stub/std",
-	"pallet-oracle/std",
+	"charli3-oracle-core/std",
 ]
 
 runtime-benchmarks = [
@@ -169,5 +169,5 @@ try-runtime = [
 	"pallet-sudo/try-runtime",
 	"pallet-timestamp/try-runtime",
 	"pallet-transaction-payment/try-runtime",
-	"pallet-oracle/try-runtime",
+	"charli3-oracle-core/try-runtime",
 ]
