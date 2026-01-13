@@ -224,4 +224,4 @@ pallet-session-runtime-stub = { path = "toolkit/pallets/pallet-session-runtime-s
 partner-chains-cardano-offchain = { path = "toolkit/offchain", default-features = false }
 partner-chains-plutus-data = { path = "toolkit/primitives/plutus-data", default-features = false }
 partner-chains-smart-contracts-commands = { path = "toolkit/cli/smart-contracts-commands", default-features = false }
-charli3-oracle-core = { path = "../charli3-oracle-core", default-features = false }
+charli3-oracle-core = { version = "0.1.0-alpha.1", default-features = false, features = ["pallet"] }
