@@ -113,3 +113,27 @@ The mechanism for this includes a partner chain builder initializing a token res
 This means that tokens are moved from the reserve into a locked circulating supply on Cardano, at which point they become available in circulation on the partner chain either through a time direct observability.
 
 For more details on how to implement Native Token Management in a partner chain, refer to the [Native Token Migration Guide](docs/developer-guides/native-token-migration-guide.md)
+
+## License
+
+This repository is part of the Charli3 Oracle Partnerchain Core System and is
+licensed under the Business Source License (BSL) 1.1.
+
+What this allows:
+
+- ✅ Full source visibility and auditability
+- ✅ Internal and production use with the Charli3 hosted partner-chain
+- ✅ Development of oracle templates, bridges, and data adapters
+- ✅ Commercial sale of templates and adapters on the Charli3 marketplace
+- ✅ Limited modification of the core to support extensions
+
+What this restricts:
+
+- ❌ Self-hosting or operating a competing partner-chain or oracle network
+- ❌ Offering oracle-network-as-a-service using this software without a
+  commercial license
+
+Each release automatically becomes MIT licensed after 18 months.
+
+For commercial licensing inquiries:
+📧 sales@charli3.io
