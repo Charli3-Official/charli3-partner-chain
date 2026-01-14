@@ -1,6 +1,6 @@
 # Charli3 Substrate Partner Chains
 
-Our own Partner Chains repository version for Charli3.
+This repository is Charli3's extension of [IOG's Base Partnerchain](https://github.com/input-output-hk/partner-chains) with oracle-specific customized implementation. It utilizes the charli3-oracle-core pallet to add price feed aggregation and related functionalities.
 
 ## Development environment
 
