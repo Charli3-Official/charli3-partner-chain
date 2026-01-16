@@ -10,12 +10,16 @@ const DB_CONNECTION_STRING: &str =
 	"postgresql://postgres-user:postgres-password@localhost:5432/cexplorer";
 const SIDECHAIN_BLOCK_BENEFICIARY_STRING: &str =
 	"01e552298e47454041ea31273b4b630c64c104e4514aa3643490b8aaca9cf8ed";
+const ORACLE_CONFIG_ABSOLUTE_PATH: &str = "/path/to/data/oracle/node-config.json";
+const ORACLE_CONFIG_CONTENT: &str = r#"{"providers":[{"name":"example","weights":[]}]}"#;
+const EXPECTED_TEMP_SCRIPT_PATH: &str = "/tmp/dummy5";
 fn keystore_path() -> String {
 	format!("{DATA_PATH}/chains/{DEFAULT_CHAIN_NAME}/keystore")
 }
 const GRANDPA_PREFIX: &str = "6772616e"; // "gran" in hex
 const CROSS_CHAIN_PREFIX: &str = "63726368"; // "crch" in hex
 const AURA_PREFIX: &str = "61757261"; // "aura" in hex
+const ORACLE_PREFIX: &str = "6f726163"; // "orac" in hex
 
 fn default_config() -> StartNodeConfig {
 	StartNodeConfig {
@@ -61,20 +65,44 @@ fn default_chain_config() -> serde_json::Value {
 	})
 }
 
-fn default_chain_config_run_command() -> String {
-	let node_ws_port = NODE_P2P_PORT.default.unwrap();
-	format!(
-		"CARDANO_SECURITY_PARAMETER='{SECURITY_PARAMETER}' \\
-         CARDANO_ACTIVE_SLOTS_COEFF='{ACTIVE_SLOTS_COEFF}' \\
-         DB_SYNC_POSTGRES_CONNECTION_STRING='{DB_CONNECTION_STRING}' \\
-         MC__FIRST_EPOCH_TIMESTAMP_MILLIS='{FIRST_EPOCH_TIMESTAMP_MILLIS}' \\
-         MC__EPOCH_DURATION_MILLIS='{EPOCH_DURATION_MILLIS}' \\
-         MC__FIRST_EPOCH_NUMBER='{FIRST_EPOCH_NUMBER}' \\
-         MC__FIRST_SLOT_NUMBER='{FIRST_SLOT_NUMBER}' \\
-         BLOCK_STABILITY_MARGIN='0' \\
-		 SIDECHAIN_BLOCK_BENEFICIARY='{SIDECHAIN_BLOCK_BENEFICIARY_STRING}' \\
- {EXECUTABLE_PATH} --validator --chain {CHAIN_SPEC_FILE} --base-path {DATA_PATH} --port {node_ws_port} --bootnodes {BOOTNODE}"
+fn expected_env_vars() -> Vec<(&'static str, String)> {
+	vec![
+		("CARDANO_SECURITY_PARAMETER", SECURITY_PARAMETER.to_string()),
+		("CARDANO_ACTIVE_SLOTS_COEFF", ACTIVE_SLOTS_COEFF.to_string()),
+		("DB_SYNC_POSTGRES_CONNECTION_STRING", DB_CONNECTION_STRING.into()),
+		(
+			"MC__FIRST_EPOCH_TIMESTAMP_MILLIS",
+			FIRST_EPOCH_TIMESTAMP_MILLIS.to_string(),
+		),
+		("MC__EPOCH_DURATION_MILLIS", EPOCH_DURATION_MILLIS.to_string()),
+		("MC__FIRST_EPOCH_NUMBER", FIRST_EPOCH_NUMBER.to_string()),
+		("MC__FIRST_SLOT_NUMBER", FIRST_SLOT_NUMBER.to_string()),
+		("BLOCK_STABILITY_MARGIN", 0.to_string()),
+		("SIDECHAIN_BLOCK_BENEFICIARY", SIDECHAIN_BLOCK_BENEFICIARY_STRING.into()),
+	]
+}
+
+fn expected_oracle_hex() -> String {
+	hex::encode(ORACLE_CONFIG_CONTENT.as_bytes())
+}
+
+fn expected_start_script() -> String {
+	let ws_port: u16 = NODE_P2P_PORT.default.unwrap().parse().unwrap();
+	let bootnodes = vec![BOOTNODE.to_string()];
+	build_startup_script(
+		&expected_env_vars(),
+		EXECUTABLE_PATH,
+		DATA_PATH,
+		ws_port,
+		&bootnodes,
+		ORACLE_CONFIG_ABSOLUTE_PATH,
+		&expected_oracle_hex(),
+		DEFAULT_RPC_PORT,
 	)
+}
+
+fn expected_run_command() -> String {
+	format!("sh {}", shell_quote(EXPECTED_TEMP_SCRIPT_PATH))
 }
 
 #[rustfmt::skip]
@@ -106,12 +134,14 @@ fn happy_path() {
 		format!("{CROSS_CHAIN_PREFIX}020a1091341fe5664bfa1782d5e04779689068c916b04cb365ec3153755684d9a1"),
 		format!("{AURA_PREFIX}aura-key"),
 		format!("{GRANDPA_PREFIX}grandpa-key"),
+		format!("{ORACLE_PREFIX}oracle-key"),
 	];
 
 	let context = MockIOContext::new()
 		.with_file(EXECUTABLE_PATH, "<mock executable>")
 		.with_json_file(RESOURCES_CONFIG_PATH, default_config_json())
-        .with_json_file(CHAIN_CONFIG_FILE_PATH, default_chain_config())
+		.with_json_file(CHAIN_CONFIG_FILE_PATH, default_chain_config())
+		.with_file(ORACLE_CONFIG_ABSOLUTE_PATH, ORACLE_CONFIG_CONTENT)
 		.with_file(CHAIN_SPEC_FILE, "irrelevant")
 		.with_expected_io(vec![
 			MockIO::file_read(RESOURCES_CONFIG_PATH),
@@ -133,15 +163,62 @@ fn happy_path() {
 			MockIO::file_read(RESOURCES_CONFIG_PATH),
 			MockIO::file_write_json_contains(RESOURCES_CONFIG_PATH, &SIDECHAIN_BLOCK_BENEFICIARY.json_pointer(), SIDECHAIN_BLOCK_BENEFICIARY_STRING),
 			value_check_prompt(),
+			MockIO::file_read(ORACLE_CONFIG_ABSOLUTE_PATH),
 			MockIO::file_read(RESOURCES_CONFIG_PATH),
 			MockIO::file_read(RESOURCES_CONFIG_PATH),
 			MockIO::file_write_json_contains(RESOURCES_CONFIG_PATH, &NODE_P2P_PORT.json_pointer(), NODE_P2P_PORT.default.unwrap()),
-			MockIO::run_command(&default_chain_config_run_command(), "irrelevant")
+			MockIO::new_tmp_file(&expected_start_script()),
+			MockIO::run_command(&expected_run_command(), "irrelevant")
 		]);
 
 	let result = StartNodeCmd { silent: false }.run(&context);
 
 	result.expect("should succeed");
+}
+
+#[test]
+fn fails_when_oracle_config_missing() {
+	let keystore_files = vec![
+		format!("{CROSS_CHAIN_PREFIX}020a1091341fe5664bfa1782d5e04779689068c916b04cb365ec3153755684d9a1"),
+		format!("{AURA_PREFIX}aura-key"),
+		format!("{GRANDPA_PREFIX}grandpa-key"),
+		format!("{ORACLE_PREFIX}oracle-key"),
+	];
+
+	let context = MockIOContext::new()
+		.with_file(EXECUTABLE_PATH, "<mock executable>")
+		.with_json_file(RESOURCES_CONFIG_PATH, default_config_json())
+		.with_json_file(CHAIN_CONFIG_FILE_PATH, default_chain_config())
+		.with_file(CHAIN_SPEC_FILE, "irrelevant")
+		.with_expected_io(vec![
+			MockIO::file_read(RESOURCES_CONFIG_PATH),
+			MockIO::eprint(&format!(
+				"🛠️ Loaded node base path from config ({RESOURCES_CONFIG_PATH}): {DATA_PATH}"
+			)),
+			MockIO::file_read(RESOURCES_CONFIG_PATH),
+			MockIO::eprint(&format!(
+				"🛠️ Loaded Partner Chains node executable from config ({RESOURCES_CONFIG_PATH}): {EXECUTABLE_PATH}"
+			)),
+			MockIO::list_dir(&keystore_path(), Some(keystore_files.clone())),
+			MockIO::file_read(RESOURCES_CONFIG_PATH),
+			MockIO::eprint(&format!(
+				"🛠️ Loaded DB-Sync Postgres connection string from config ({RESOURCES_CONFIG_PATH}): {DB_CONNECTION_STRING}"
+			)),
+			MockIO::file_read(CHAIN_CONFIG_FILE_PATH),
+			MockIO::list_dir(&keystore_path(), Some(keystore_files.clone())),
+			MockIO::file_read(RESOURCES_CONFIG_PATH),
+			MockIO::file_read(RESOURCES_CONFIG_PATH),
+			MockIO::file_write_json_contains(RESOURCES_CONFIG_PATH, &SIDECHAIN_BLOCK_BENEFICIARY.json_pointer(), SIDECHAIN_BLOCK_BENEFICIARY_STRING),
+			value_check_prompt(),
+			MockIO::file_read(ORACLE_CONFIG_ABSOLUTE_PATH),
+			MockIO::eprint(&format!(
+				"⚠️ Oracle price configuration file {ORACLE_CONFIG_ABSOLUTE_PATH} is missing. Copy config/example-config.json into {ORACLE_CONFIG_ABSOLUTE_PATH} and rerun."
+			)),
+		]);
+
+	let result = StartNodeCmd { silent: false }.run(&context);
+
+	assert!(result.is_err(), "start-node should error when oracle config is missing");
 }
 
 mod check_chain_spec {
@@ -180,6 +257,7 @@ mod check_keystore {
 			format!("{CROSS_CHAIN_PREFIX}cross-chain-key"),
 			format!("{AURA_PREFIX}aura-key"),
 			format!("{GRANDPA_PREFIX}grandpa-key"),
+			format!("{ORACLE_PREFIX}oracle-key"),
 		];
 		#[rustfmt::skip]
 		let context = MockIOContext::new().with_expected_io(vec![
@@ -195,12 +273,13 @@ mod check_keystore {
 	fn fails_when_one_is_missing() {
 		let keystore_files = vec![
 			format!("{CROSS_CHAIN_PREFIX}cross-chain-key"),
+			format!("{AURA_PREFIX}aura-key"),
 			format!("{GRANDPA_PREFIX}grandpa-key"),
 		];
 		let context = MockIOContext::new().with_expected_io(vec![
 			MockIO::list_dir(&keystore_path(), Some(keystore_files.clone())),
 			MockIO::eprint(
-				"⚠️ Aura key is missing from the keystore. Please run generate-keys wizard first.",
+				"⚠️ Oracle key is missing from the keystore. Please run generate-keys wizard first.",
 			),
 		]);
 

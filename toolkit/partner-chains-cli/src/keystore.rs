@@ -16,6 +16,8 @@ pub const GRANDPA: KeyDefinition<'static> =
 	KeyDefinition { name: "Grandpa", scheme: "ed25519", key_type: "gran" };
 pub const CROSS_CHAIN: KeyDefinition<'static> =
 	KeyDefinition { name: "Cross-chain", scheme: "ecdsa", key_type: "crch" };
+pub const ORACLE: KeyDefinition<'static> =
+	KeyDefinition { name: "Oracle", scheme: "ed25519", key_type: "orac" };
 
 pub fn keystore_path(substrate_node_base_path: &str, chain_name: &str) -> String {
 	format!("{substrate_node_base_path}/chains/{chain_name}/keystore")
