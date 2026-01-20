@@ -50,6 +50,8 @@ sp-timestamp = { workspace = true }
 sp-inherents = { workspace = true }
 sp-keyring = { workspace = true }
 authority-selection-inherents = { workspace = true }
+pallet-sudo = { workspace = true }
+pallet-multisig = { workspace = true }
 frame-system = { workspace = true }
 pallet-transaction-payment = { workspace = true }
 sp-block-rewards = { workspace = true }

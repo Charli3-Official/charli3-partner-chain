@@ -23,6 +23,7 @@ pallet-grandpa = { workspace = true }
 pallet-partner-chains-session = { workspace = true }
 pallet-session = { workspace = true }
 pallet-sudo = { workspace = true }
+pallet-multisig = { workspace = true }
 frame-system = { workspace = true }
 frame-try-runtime = { workspace = true, optional = true }
 pallet-timestamp = { workspace = true }
@@ -109,6 +110,7 @@ std = [
 	"pallet-block-rewards/std",
 	"pallet-grandpa/std",
 	"pallet-sudo/std",
+	"pallet-multisig/std",
 	"pallet-partner-chains-session/std",
 	"pallet-session-validator-management/std",
 	"pallet-session-validator-management-benchmarking?/std",
@@ -166,6 +168,7 @@ try-runtime = [
 	"pallet-aura/try-runtime",
 	"pallet-balances/try-runtime",
 	"pallet-grandpa/try-runtime",
+	"pallet-multisig/try-runtime",
 	"pallet-sudo/try-runtime",
 	"pallet-timestamp/try-runtime",
 	"pallet-transaction-payment/try-runtime",
