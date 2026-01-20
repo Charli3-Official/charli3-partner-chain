@@ -127,6 +127,7 @@ pallet-balances = { default-features = false, git = "https://github.com/parityte
 pallet-grandpa = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 pallet-session = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 pallet-sudo = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
+pallet-multisig = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 pallet-timestamp = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 pallet-transaction-payment = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 pallet-transaction-payment-rpc = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
@@ -224,4 +225,5 @@ pallet-session-runtime-stub = { path = "toolkit/pallets/pallet-session-runtime-s
 partner-chains-cardano-offchain = { path = "toolkit/offchain", default-features = false }
 partner-chains-plutus-data = { path = "toolkit/primitives/plutus-data", default-features = false }
 partner-chains-smart-contracts-commands = { path = "toolkit/cli/smart-contracts-commands", default-features = false }
-charli3-oracle-core = { git = "https://github.com/Charli3-Official/charli3-substrate-oracle-core.git", branch = "upgrade/polkadot-stable2509", default-features = false, features = ["pallet"] }
+# charli3-oracle-core = { git = "https://github.com/Charli3-Official/charli3-substrate-oracle-core.git", branch = "upgrade/polkadot-stable2509", default-features = false, features = ["pallet"] }
+charli3-oracle-core = { path = "/home/jsrqv/code/substrate/charli3-substrate-oracle-core", default-features = false, features = ["pallet"] }

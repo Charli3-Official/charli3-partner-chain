@@ -17,7 +17,6 @@ pub struct GenerateKeysCmd {
 	pub cross_chain_key: Option<String>,
 	pub grandpa_key: Option<String>,
 	pub aura_key: Option<String>,
-	pub oracle_key: Option<String>,
 }
 
 #[derive(Debug)]
@@ -61,8 +60,7 @@ impl CmdRun for GenerateKeysCmd {
 		);
 		context.eprint("→  an ECDSA Cross-chain key");
 		context.eprint("→  an ED25519 Grandpa key");
-		context.eprint("→  an ED25519 Aura key");
-		context.eprint("→  an ED25519 Oracle key");
+		context.eprint("→  an ED25519 Aura key (also used as Oracle key)");
 		context.eprint("It will also generate a network key for your node if needed.");
 		context.enewline();
 
@@ -145,13 +143,6 @@ pub fn generate_spo_keys<C: IOContext>(
 			import_existing_key(config, context, &AURA, key)?
 		} else {
 			generate_or_load_key(config, context, &AURA)?
-		};
-		context.enewline();
-
-		let _oracle_key = if let Some(key) = &cmd.oracle_key {
-			import_existing_key(config, context, &ORACLE, key)?
-		} else {
-			generate_or_load_key(config, context, &ORACLE)?
 		};
 		context.enewline();
 

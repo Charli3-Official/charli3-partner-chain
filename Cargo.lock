@@ -1509,7 +1509,6 @@ dependencies = [
 [[package]]
 name = "charli3-oracle-core"
 version = "0.1.0-alpha.3"
-source = "git+https://github.com/Charli3-Official/charli3-substrate-oracle-core.git?branch=upgrade%2Fpolkadot-stable2509#813f1b7f7edb4f53cee5c5c7200e8a9fafa533bd"
 dependencies = [
  "frame-support",
  "frame-system",
@@ -1707,7 +1706,7 @@ checksum = "af491d569909a7e4dee0ad7db7f5341fef5c614d5b8ec8cf765732aba3cff681"
 dependencies = [
  "serde",
  "termcolor",
- "unicode-width 0.2.2",
+ "unicode-width 0.1.14",
 ]
 
 [[package]]
@@ -7455,6 +7454,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "pallet-multisig"
+version = "43.0.0"
+source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2509#5ab401310d2fbd808b3ffbcfc8735ad8f1c8fe10"
+dependencies = [
+ "log",
+ "parity-scale-codec",
+ "polkadot-sdk-frame",
+ "scale-info",
+]
+
+[[package]]
 name = "pallet-native-token-management"
 version = "1.4.0"
 dependencies = [
@@ -7734,7 +7744,7 @@ checksum = "4e69bf016dc406eff7d53a7d3f7cf1c2e72c82b9088aac1118591e36dd2cd3e9"
 dependencies = [
  "bitcoin_hashes 0.13.0",
  "rand 0.8.5",
- "rand_core 0.6.4",
+ "rand_core 0.4.2",
  "serde",
  "unicode-normalization",
 ]
@@ -7939,10 +7949,12 @@ dependencies = [
  "jsonrpsee",
  "log",
  "main-chain-follower-mock",
+ "pallet-multisig",
  "pallet-partner-chains-session",
  "pallet-session-validator-management",
  "pallet-session-validator-management-rpc",
  "pallet-sidechain-rpc",
+ "pallet-sudo",
  "pallet-transaction-payment",
  "pallet-transaction-payment-rpc",
  "partner-chains-node-commands",
@@ -11832,6 +11844,7 @@ dependencies = [
  "pallet-balances",
  "pallet-block-rewards",
  "pallet-grandpa",
+ "pallet-multisig",
  "pallet-native-token-management",
  "pallet-partner-chains-session",
  "pallet-session",

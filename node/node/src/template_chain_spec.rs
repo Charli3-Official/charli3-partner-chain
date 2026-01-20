@@ -9,6 +9,21 @@ use sidechain_runtime::{
 use sp_core::ConstU32;
 use sp_runtime::BoundedVec;
 use std::str::FromStr;
+use sp_consensus_aura::ed25519::AuthorityId as AuraId;
+use sp_consensus_grandpa::AuthorityId as GrandpaId;
+
+/// Generate an Aura authority key.
+pub fn authority_keys_from_seed(s: &str) -> (AuraId, GrandpaId) {
+	(get_from_seed::<AuraId>(s), get_from_seed::<GrandpaId>(s))
+}
+
+/// Helper to create a multisig account from signers + threshold
+pub fn get_multisig_account(signers: Vec<AccountId>, threshold: u16) -> AccountId {
+	// Must be sorted!
+	let mut sorted = signers;
+	sorted.sort();
+	pallet_multisig::Pallet::<sidechain_runtime::Runtime>::multi_account_id(&sorted, threshold)
+}
 
 /// Produces template chain spec for Partner Chains.
 /// This code should be run by `partner-chains-cli chain-spec`, to produce JSON chain spec file.
@@ -24,8 +39,8 @@ pub fn chain_spec() -> Result<ChainSpec, envy::Error> {
 	]
 	.to_vec();
 
-	let oracle_authorized_nodes =
-		BoundedVec::try_from(endowed_accounts.clone()).expect("Oracle authorized nodes within limit");
+	let oracle_authorized_nodes = BoundedVec::try_from(endowed_accounts.clone())
+		.expect("Oracle authorized nodes within limit");
 	let oracle_trade_pairs = BoundedVec::try_from(vec![
 		TradePair::from_ticker("WETH-USDC"),
 		TradePair::from_ticker("WBTC-USDC"),
@@ -59,7 +74,12 @@ pub fn chain_spec() -> Result<ChainSpec, envy::Error> {
 		grandpa: GrandpaConfig { authorities: vec![], ..Default::default() },
 		sudo: SudoConfig {
 			// No sudo account by default, please update with your preferences.
-			key: None,
+			key: Some(
+				AccountId::from_str(
+					"0xb13b1465adee39623aa3f493f9d2c0c6c9a01f7723cf081488e01ff8da617318",
+				)
+				.unwrap(),
+			),
 		},
 		transaction_payment: Default::default(),
 		session: SessionConfig {
