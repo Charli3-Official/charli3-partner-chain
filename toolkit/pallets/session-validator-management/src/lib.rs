@@ -315,10 +315,9 @@ pub mod pallet {
 
 		fn inherent_data_to_authority_selection_inputs(
 			data: &InherentData,
-		) -> T::AuthoritySelectionInputs {
+		) -> Option<T::AuthoritySelectionInputs> {
 			data.get_data::<T::AuthoritySelectionInputs>(&INHERENT_IDENTIFIER)
 				.expect("Validator inherent data not correctly encoded")
-				.expect("Validator inherent data must be provided")
 		}
 
 		fn calculate_committee_from_inherent_data(
@@ -326,7 +325,7 @@ pub mod pallet {
 			epoch_number: T::ScEpochNumber,
 		) -> Option<BoundedVec<(T::AuthorityId, T::AuthorityKeys), T::MaxValidators>> {
 			let authority_selection_inputs =
-				Self::inherent_data_to_authority_selection_inputs(data);
+				Self::inherent_data_to_authority_selection_inputs(data)?;
 			T::select_authorities(authority_selection_inputs, epoch_number)
 		}
 
