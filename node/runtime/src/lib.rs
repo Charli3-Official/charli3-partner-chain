@@ -106,7 +106,7 @@ type DbWeight = RocksDbWeight;
 pub mod opaque {
 	use super::*;
 	use parity_scale_codec::MaxEncodedLen;
-	use sp_core::{ed25519};
+	use sp_core::ed25519;
 	pub use sp_runtime::OpaqueExtrinsic as UncheckedExtrinsic;
 
 	/// Opaque block header type.
@@ -343,7 +343,9 @@ impl<LocalCall> frame_system::offchain::CreateSignedTransaction<LocalCall> for R
 where
 	RuntimeCall: From<LocalCall>,
 {
-	fn create_signed_transaction<C: frame_system::offchain::AppCrypto<Self::Public, Self::Signature>>(
+	fn create_signed_transaction<
+		C: frame_system::offchain::AppCrypto<Self::Public, Self::Signature>,
+	>(
 		call: RuntimeCall,
 		public: <Signature as Verify>::Signer,
 		account: AccountId,

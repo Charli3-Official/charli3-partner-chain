@@ -70,10 +70,7 @@ fn expected_env_vars() -> Vec<(&'static str, String)> {
 		("CARDANO_SECURITY_PARAMETER", SECURITY_PARAMETER.to_string()),
 		("CARDANO_ACTIVE_SLOTS_COEFF", ACTIVE_SLOTS_COEFF.to_string()),
 		("DB_SYNC_POSTGRES_CONNECTION_STRING", DB_CONNECTION_STRING.into()),
-		(
-			"MC__FIRST_EPOCH_TIMESTAMP_MILLIS",
-			FIRST_EPOCH_TIMESTAMP_MILLIS.to_string(),
-		),
+		("MC__FIRST_EPOCH_TIMESTAMP_MILLIS", FIRST_EPOCH_TIMESTAMP_MILLIS.to_string()),
 		("MC__EPOCH_DURATION_MILLIS", EPOCH_DURATION_MILLIS.to_string()),
 		("MC__FIRST_EPOCH_NUMBER", FIRST_EPOCH_NUMBER.to_string()),
 		("MC__FIRST_SLOT_NUMBER", FIRST_SLOT_NUMBER.to_string()),
@@ -134,7 +131,6 @@ fn happy_path() {
 		format!("{CROSS_CHAIN_PREFIX}020a1091341fe5664bfa1782d5e04779689068c916b04cb365ec3153755684d9a1"),
 		format!("{AURA_PREFIX}aura-key"),
 		format!("{GRANDPA_PREFIX}grandpa-key"),
-		format!("{ORACLE_PREFIX}oracle-key"),
 	];
 
 	let context = MockIOContext::new()
@@ -182,7 +178,6 @@ fn fails_when_oracle_config_missing() {
 		format!("{CROSS_CHAIN_PREFIX}020a1091341fe5664bfa1782d5e04779689068c916b04cb365ec3153755684d9a1"),
 		format!("{AURA_PREFIX}aura-key"),
 		format!("{GRANDPA_PREFIX}grandpa-key"),
-		format!("{ORACLE_PREFIX}oracle-key"),
 	];
 
 	let context = MockIOContext::new()
@@ -257,7 +252,6 @@ mod check_keystore {
 			format!("{CROSS_CHAIN_PREFIX}cross-chain-key"),
 			format!("{AURA_PREFIX}aura-key"),
 			format!("{GRANDPA_PREFIX}grandpa-key"),
-			format!("{ORACLE_PREFIX}oracle-key"),
 		];
 		#[rustfmt::skip]
 		let context = MockIOContext::new().with_expected_io(vec![
@@ -274,12 +268,12 @@ mod check_keystore {
 		let keystore_files = vec![
 			format!("{CROSS_CHAIN_PREFIX}cross-chain-key"),
 			format!("{AURA_PREFIX}aura-key"),
-			format!("{GRANDPA_PREFIX}grandpa-key"),
+			// Missing GRANDPA key
 		];
 		let context = MockIOContext::new().with_expected_io(vec![
 			MockIO::list_dir(&keystore_path(), Some(keystore_files.clone())),
 			MockIO::eprint(
-				"⚠️ Oracle key is missing from the keystore. Please run generate-keys wizard first.",
+				"⚠️ Grandpa key is missing from the keystore. Please run generate-keys wizard first.",
 			),
 		]);
 
