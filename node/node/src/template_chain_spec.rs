@@ -5,9 +5,9 @@ use sidechain_runtime::{
 	OracleConfig, RuntimeGenesisConfig, SessionCommitteeManagementConfig, SessionConfig,
 	SidechainConfig, SudoConfig, SystemConfig,
 };
-use std::str::FromStr;
 use sp_consensus_aura::ed25519::AuthorityId as AuraId;
 use sp_consensus_grandpa::AuthorityId as GrandpaId;
+use std::str::FromStr;
 
 /// Generate an Aura authority key.
 pub fn authority_keys_from_seed(s: &str) -> (AuraId, GrandpaId) {

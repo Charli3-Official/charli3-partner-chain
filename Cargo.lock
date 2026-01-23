@@ -1509,6 +1509,7 @@ dependencies = [
 [[package]]
 name = "charli3-oracle-core"
 version = "0.1.0-alpha.3"
+source = "git+https://github.com/Charli3-Official/charli3-substrate-oracle-core.git?branch=upgrade%2Fpolkadot-stable2509#813f1b7f7edb4f53cee5c5c7200e8a9fafa533bd"
 dependencies = [
  "frame-support",
  "frame-system",
