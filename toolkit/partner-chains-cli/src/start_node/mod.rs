@@ -154,7 +154,8 @@ fn check_keystore<C: IOContext>(config: &StartNodeConfig, context: &C) -> anyhow
 	let existing_keys = context.list_directory(&config.keystore_path())?.unwrap_or_default();
 	Ok(key_present(&AURA, &existing_keys, context)
 		&& key_present(&GRANDPA, &existing_keys, context)
-		&& key_present(&CROSS_CHAIN, &existing_keys, context))
+		&& key_present(&CROSS_CHAIN, &existing_keys, context)
+		&& key_present(&ORACLE, &existing_keys, context))
 }
 
 fn key_present<C: IOContext>(key: &KeyDefinition, existing_keys: &[String], context: &C) -> bool {

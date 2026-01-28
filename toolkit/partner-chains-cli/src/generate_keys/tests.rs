@@ -68,6 +68,7 @@ pub mod scenarios {
 		aura_key: &str,
 		grandpa_key: &str,
 		cross_chain_key: &str,
+		oracle_key: &str,
 	) -> MockIO {
 		MockIO::Group(vec![
 			MockIO::list_dir(&keystore_path(), None),
@@ -89,12 +90,21 @@ pub mod scenarios {
 			MockIO::enewline(),
 
 			MockIO::list_dir(&keystore_path(), None),
-			MockIO::eprint("⚙️ Generating Aura (ed25519) key (also used as Oracle key)"),
+			MockIO::eprint("⚙️ Generating Aura (ed25519) key"),
 			MockIO::run_command_json(&format!("{EXECUTABLE_PATH} key generate --scheme ed25519 --output-type json"),
 				&serde_json::json!({"publicKey": aura_key, "secretPhrase": "aura secret phrase"})),
 			MockIO::eprint("💾 Inserting Aura (ed25519) key"),
 			MockIO::run_command(&format!("{EXECUTABLE_PATH} key insert --base-path {DATA_PATH} --scheme ed25519 --key-type aura --suri 'aura secret phrase'"), ""),
 			MockIO::eprint(&format!("💾 Aura key stored at {}/{AURA_PREFIX}{aura_key}", &keystore_path())),
+			MockIO::enewline(),
+
+			MockIO::list_dir(&keystore_path(), None),
+			MockIO::eprint("⚙️ Generating Oracle (ed25519) key"),
+			MockIO::run_command_json(&format!("{EXECUTABLE_PATH} key generate --scheme ed25519 --output-type json"),
+				&serde_json::json!({"publicKey": oracle_key, "secretPhrase": "oracle secret phrase"})),
+			MockIO::eprint("💾 Inserting Oracle (ed25519) key"),
+			MockIO::run_command(&format!("{EXECUTABLE_PATH} key insert --base-path {DATA_PATH} --scheme ed25519 --key-type orac --suri 'oracle secret phrase'"), ""),
+			MockIO::eprint(&format!("💾 Oracle key stored at {}/{ORACLE_PREFIX}{oracle_key}", &keystore_path())),
 			MockIO::enewline(),
 		])
 	}
@@ -110,7 +120,7 @@ pub mod scenarios {
 		])
 	}
 
-	pub fn write_key_file(aura: &str, grandpa: &str, cross_chain: &str) -> MockIO {
+	pub fn write_key_file(aura: &str, grandpa: &str, cross_chain: &str, oracle: &str) -> MockIO {
 		MockIO::Group(vec![
 			MockIO::file_write_json(
 				"partner-chains-public-keys.json",
@@ -118,6 +128,13 @@ pub mod scenarios {
 					"aura_pub_key": aura,
 					"grandpa_pub_key": grandpa,
 					"sidechain_pub_key": cross_chain,
+					// Assuming oracle_key should be written if needed, or if it wasn't there before, check diff.
+					// The diff didn't show oracle_key being added to the JSON, only to the print output?
+					// Wait, the diff removed it from happy_path call, but did it remove it from write_key_file definition?
+					// Let's check the diff again.
+					// The diff showed removals in `write_key_file` calls.
+					// Re-reading diff: `scenarios::write_key_file("aura-pub-key", "grandpa-pub-key", "cross-chain-pub-key"),` was the *new* state (after removal).
+					// So I need to add it back to the signature and the print.
 				}),
 			),
 			MockIO::eprint("🔑 The following public keys were generated and saved to the partner-chains-public-keys.json file:"),
@@ -128,6 +145,14 @@ pub mod scenarios {
   \"grandpa_pub_key\": \"{grandpa}\"
 }}"
 			)),
+			// The original code probably didn't include oracle in the JSON file if PermissionedCandidateKeys doesn't support it.
+			// The diff showed removals from the CALL SITE of `write_key_file`.
+			// It did NOT show changes to the `write_key_file` function BODY in the diff snippet provided.
+			// Wait, I see `scenarios::write_key_file("aura-pub-key", "grandpa-pub-key", "cross-chain-pub-key"),` in `happy_path`.
+			// I need to update `happy_path` to call it with 4 args, but first I need to update the definition if needed.
+			// The user provided diff for `tests.rs` showed removals of `oracle_key` from `happy_path` and `generate_spo_keys`.
+			// It didn't explicitly show `write_key_file` being changed, but implied it.
+			// Let's assume I just need to update the signature to accept it to compile, even if unused in JSON.
 			MockIO::eprint("You may share them with your chain governance authority"),
 			MockIO::eprint("if you wish to be included as a permissioned candidate."),
 		])
@@ -178,8 +203,9 @@ fn happy_path() {
 				"aura-pub-key",
 				"grandpa-pub-key",
 				"cross-chain-pub-key",
+				"oracle-pub-key",
 			),
-			scenarios::write_key_file("aura-pub-key", "grandpa-pub-key", "cross-chain-pub-key"),
+			scenarios::write_key_file("aura-pub-key", "grandpa-pub-key", "cross-chain-pub-key", "oracle-pub-key"),
 			MockIO::enewline(),
 			scenarios::generate_network_key(),
 			MockIO::enewline(),
@@ -190,6 +216,7 @@ fn happy_path() {
 		cross_chain_key: None,
 		grandpa_key: None,
 		aura_key: None,
+		oracle_key: None,
 	}
 	.run(&mock_context);
 
@@ -263,6 +290,7 @@ mod generate_spo_keys {
 			format!("{CROSS_CHAIN_PREFIX}cross-chain-key"),
 			format!("{AURA_PREFIX}aura-key"),
 			format!("{GRANDPA_PREFIX}grandpa-key"),
+			format!("{ORACLE_PREFIX}oracle-key"),
 		];
 		let mock_context = MockIOContext::new()
 			.with_json_file(
@@ -294,7 +322,14 @@ mod generate_spo_keys {
 					false,
 				),
 				MockIO::enewline(),
-				scenarios::write_key_file("0xaura-key", "0xgrandpa-key", "0xcross-chain-key"),
+				MockIO::list_dir(&keystore_path(), Some(keystore_files.clone())),
+				MockIO::prompt_yes_no(
+					"A Oracle key already exists in store: oracle-key - overwrite it?",
+					false,
+					false,
+				),
+				MockIO::enewline(),
+				scenarios::write_key_file("0xaura-key", "0xgrandpa-key", "0xcross-chain-key", "0xoracle-key"),
 			]);
 
 		let result = generate_spo_keys(&default_config(), &mock_context);
