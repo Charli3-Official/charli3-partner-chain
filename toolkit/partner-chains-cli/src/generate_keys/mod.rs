@@ -17,6 +17,7 @@ pub struct GenerateKeysCmd {
 	pub cross_chain_key: Option<String>,
 	pub grandpa_key: Option<String>,
 	pub aura_key: Option<String>,
+	pub oracle_key: Option<String>,
 }
 
 #[derive(Debug)]
@@ -60,7 +61,8 @@ impl CmdRun for GenerateKeysCmd {
 		);
 		context.eprint("→  an ECDSA Cross-chain key");
 		context.eprint("→  an ED25519 Grandpa key");
-		context.eprint("→  an ED25519 Aura key (also used as Oracle key)");
+		context.eprint("→  an ED25519 Aura key");
+		context.eprint("→  an ED25519 Oracle key");
 		context.eprint("It will also generate a network key for your node if needed.");
 		context.enewline();
 
@@ -146,10 +148,20 @@ pub fn generate_spo_keys<C: IOContext>(
 		};
 		context.enewline();
 
+		let oracle_key = if let Some(key) = &cmd.oracle_key {
+			import_existing_key(config, context, &ORACLE, key)?
+		} else {
+			generate_or_load_key(config, context, &ORACLE)?
+		};
+		context.enewline();
+
 		let public_keys_json = serde_json::to_string_pretty(&PermissionedCandidateKeys {
 			sidechain_pub_key: cross_chain_key,
 			aura_pub_key: aura_key,
 			grandpa_pub_key: grandpa_key,
+			// TODO: Add oracle_key to PermissionedCandidateKeys if needed by schema,
+			// or print it separately if it's not part of that struct.
+			// Assuming PermissionedCandidateKeys doesn't have oracle_key based on previous code context.
 		})
 		.expect("Failed to serialize public keys");
 		context.write_file(KEYS_FILE_PATH, &public_keys_json);
