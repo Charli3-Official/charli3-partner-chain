@@ -60,7 +60,7 @@ impl CmdRun for GenerateKeysCmd {
 		);
 		context.eprint("→  an ECDSA Cross-chain key");
 		context.eprint("→  an ED25519 Grandpa key");
-		context.eprint("→  an ED25519 Aura key");
+		context.eprint("→  an ED25519 Aura key (also used as Oracle key)");
 		context.eprint("It will also generate a network key for your node if needed.");
 		context.enewline();
 
