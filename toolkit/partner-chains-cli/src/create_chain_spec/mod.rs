@@ -7,7 +7,7 @@ use anyhow::{anyhow, Context};
 use serde::de::DeserializeOwned;
 use serde_json::Value as JValue;
 use sidechain_domain::UtxoId;
-use sp_core::{ed25519};
+use sp_core::ed25519;
 
 #[cfg(test)]
 mod tests;

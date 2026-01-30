@@ -8,7 +8,7 @@ use sidechain_runtime::{
 	SidechainConfig, SudoConfig, SystemConfig,
 };
 use sp_core::bytes::from_hex;
-use sp_core::{ed25519};
+use sp_core::ed25519;
 use std::str::FromStr;
 
 pub fn authority_keys(

@@ -21,11 +21,7 @@ pub(crate) fn prompt_ogmios_configuration<C: IOContext>(
 	let ogmios_hostname = OGMIOS_HOSTNAME.prompt_with_default_from_file_and_save(context);
 	let ogmios_port = OGMIOS_PORT.prompt_with_default_from_file_and_save(context);
 
-	Ok(ServiceConfig {
-		protocol: ogmios_protocol,
-		hostname: ogmios_hostname,
-		port: ogmios_port
-	})
+	Ok(ServiceConfig { protocol: ogmios_protocol, hostname: ogmios_hostname, port: ogmios_port })
 }
 
 #[cfg(test)]

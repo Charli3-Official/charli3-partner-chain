@@ -46,7 +46,7 @@ impl<'a> ConfigFieldDefinition<'a, Option<u16>> {
 				.map(|v| v.map(|n| n.to_string()))
 				.flatten()
 				.as_deref()
-				.or(self.default)
+				.or(self.default),
 		);
 
 		let parsed = if value.is_empty() {
@@ -223,10 +223,10 @@ pub struct ServiceConfig {
 
 impl Display for ServiceConfig {
 	fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-			match self.port {
-				Some(port) => write!(f, "{}://{}:{}", self.protocol, self.hostname, port),
-				None => write!(f, "{}://{}", self.protocol, self.hostname),
-			}
+		match self.port {
+			Some(port) => write!(f, "{}://{}:{}", self.protocol, self.hostname, port),
+			None => write!(f, "{}://{}", self.protocol, self.hostname),
+		}
 	}
 }
 

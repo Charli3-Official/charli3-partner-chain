@@ -46,7 +46,8 @@ macro_rules! impl_pallet_session_config {
 			type SessionHandler = <$type as pallet_partner_chains_session::Config>::SessionHandler;
 			type Keys = <$type as pallet_partner_chains_session::Config>::Keys;
 			type WeightInfo = ();
-			type DisablingStrategy = pallet_session::disabling::UpToLimitWithReEnablingDisablingStrategy;
+			type DisablingStrategy =
+				pallet_session::disabling::UpToLimitWithReEnablingDisablingStrategy;
 			type Currency = pallet_balances::Pallet<$type>;
 			type KeyDeposit = ();
 		}

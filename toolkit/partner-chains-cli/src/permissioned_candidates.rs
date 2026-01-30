@@ -42,7 +42,9 @@ pub(crate) struct ParsedPermissionedCandidatesKeys {
 }
 
 impl ParsedPermissionedCandidatesKeys {
-	pub fn session_keys<SessionKeys: From<(ed25519::Public, ed25519::Public)>>(&self) -> SessionKeys {
+	pub fn session_keys<SessionKeys: From<(ed25519::Public, ed25519::Public)>>(
+		&self,
+	) -> SessionKeys {
 		SessionKeys::from((ed25519::Public::from(self.aura), ed25519::Public::from(self.grandpa)))
 	}
 

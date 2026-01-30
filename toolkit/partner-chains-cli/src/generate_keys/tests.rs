@@ -87,7 +87,7 @@ pub mod scenarios {
 			MockIO::enewline(),
 
 			MockIO::list_dir(&keystore_path(), None),
-			MockIO::eprint("⚙️ Generating Aura (ed25519) key (also used as Oracle key)"),
+			MockIO::eprint("⚙️ Generating Aura (ed25519) key"),
 			MockIO::run_command_json(&format!("{EXECUTABLE_PATH} key generate --scheme ed25519 --output-type json"),
 				&serde_json::json!({"publicKey": aura_key, "secretPhrase": "aura secret phrase"})),
 			MockIO::eprint("💾 Inserting Aura (ed25519) key"),

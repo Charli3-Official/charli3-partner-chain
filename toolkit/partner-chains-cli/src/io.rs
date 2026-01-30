@@ -195,8 +195,13 @@ impl IOContext for DefaultCmdRunContext {
 					.map_err(|e| anyhow::anyhow!("Failed to build runtime: {}", e))?;
 
 				// Use the new runtime to connect to Ogmios
-				rt.block_on(client_for_url(&ogmios_address))
-					.map_err(|e| anyhow::anyhow!("Couldn't open connection to Ogmios at {}: {}", ogmios_address, e))
+				rt.block_on(client_for_url(&ogmios_address)).map_err(|e| {
+					anyhow::anyhow!(
+						"Couldn't open connection to Ogmios at {}: {}",
+						ogmios_address,
+						e
+					)
+				})
 			})
 			.join()
 			.map_err(|_| anyhow::anyhow!("Thread panicked"))?
