@@ -11,6 +11,7 @@ const CHAIN_NAME: &str = "partner_chains_template";
 const GRANDPA_PREFIX: &str = "6772616e"; // "gran" in hex
 const CROSS_CHAIN_PREFIX: &str = "63726368"; // "crch" in hex
 const AURA_PREFIX: &str = "61757261"; // "aura" in hex
+const ORACLE_PREFIX: &str = "6f726163"; // "orac" in hex
 
 fn default_config() -> GenerateKeysConfig {
 	GenerateKeysConfig {
@@ -37,6 +38,7 @@ pub mod scenarios {
 			MockIO::eprint("→  an ECDSA Cross-chain key"),
 			MockIO::eprint("→  an ED25519 Grandpa key"),
 			MockIO::eprint("→  an ED25519 Aura key"),
+			MockIO::eprint("→  an ED25519 Oracle key"),
 			MockIO::eprint("It will also generate a network key for your node if needed.")
 		])
 	}
@@ -66,6 +68,7 @@ pub mod scenarios {
 		aura_key: &str,
 		grandpa_key: &str,
 		cross_chain_key: &str,
+		oracle_key: &str,
 	) -> MockIO {
 		MockIO::Group(vec![
 			MockIO::list_dir(&keystore_path(), None),
@@ -93,6 +96,15 @@ pub mod scenarios {
 			MockIO::eprint("💾 Inserting Aura (ed25519) key"),
 			MockIO::run_command(&format!("{EXECUTABLE_PATH} key insert --base-path {DATA_PATH} --scheme ed25519 --key-type aura --suri 'aura secret phrase'"), ""),
 			MockIO::eprint(&format!("💾 Aura key stored at {}/{AURA_PREFIX}{aura_key}", &keystore_path())),
+			MockIO::enewline(),
+
+			MockIO::list_dir(&keystore_path(), None),
+			MockIO::eprint("⚙️ Generating Oracle (ed25519) key"),
+			MockIO::run_command_json(&format!("{EXECUTABLE_PATH} key generate --scheme ed25519 --output-type json"),
+				&serde_json::json!({"publicKey": oracle_key, "secretPhrase": "oracle secret phrase"})),
+			MockIO::eprint("💾 Inserting Oracle (ed25519) key"),
+			MockIO::run_command(&format!("{EXECUTABLE_PATH} key insert --base-path {DATA_PATH} --scheme ed25519 --key-type orac --suri 'oracle secret phrase'"), ""),
+			MockIO::eprint(&format!("💾 Oracle key stored at {}/{ORACLE_PREFIX}{oracle_key}", &keystore_path())),
 			MockIO::enewline(),
 		])
 	}
@@ -176,6 +188,7 @@ fn happy_path() {
 				"aura-pub-key",
 				"grandpa-pub-key",
 				"cross-chain-pub-key",
+				"oracle-pub-key",
 			),
 			scenarios::write_key_file("aura-pub-key", "grandpa-pub-key", "cross-chain-pub-key"),
 			MockIO::enewline(),
@@ -184,7 +197,12 @@ fn happy_path() {
 			MockIO::eprint("🚀 All done!"),
 		]);
 
-	let result = GenerateKeysCmd {}.run(&mock_context);
+	let result = GenerateKeysCmd {
+		cross_chain_key: None,
+		grandpa_key: None,
+		aura_key: None,
+		oracle_key: None,
+	}.run(&mock_context);
 
 	result.expect("should succeed");
 }
@@ -256,6 +274,7 @@ mod generate_spo_keys {
 			format!("{CROSS_CHAIN_PREFIX}cross-chain-key"),
 			format!("{AURA_PREFIX}aura-key"),
 			format!("{GRANDPA_PREFIX}grandpa-key"),
+			format!("{ORACLE_PREFIX}oracle-key"),
 		];
 		let mock_context = MockIOContext::new()
 			.with_json_file(
@@ -283,6 +302,13 @@ mod generate_spo_keys {
 				MockIO::list_dir(&keystore_path(), Some(keystore_files.clone())),
 				MockIO::prompt_yes_no(
 					"A Aura key already exists in store: aura-key - overwrite it?",
+					false,
+					false,
+				),
+				MockIO::enewline(),
+				MockIO::list_dir(&keystore_path(), Some(keystore_files.clone())),
+				MockIO::prompt_yes_no(
+					"A Oracle key already exists in store: oracle-key - overwrite it?",
 					false,
 					false,
 				),
@@ -387,5 +413,6 @@ mod generate_network_key {
 
 #[test]
 fn key_type_hex_works() {
-	assert_eq!(GRANDPA.key_type_hex(), GRANDPA_PREFIX)
+	assert_eq!(GRANDPA.key_type_hex(), GRANDPA_PREFIX);
+	assert_eq!(ORACLE.key_type_hex(), ORACLE_PREFIX)
 }

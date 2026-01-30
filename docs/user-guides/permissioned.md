@@ -147,6 +147,7 @@ The generate-keys wizard will generate necessary keys and save them to your node
 1. ECDSA cross-chain key
 2. ED25519 Grandpa key
 3. ED25519 Aura key
+4. ED25519 Oracle key
 
 If these keys already exist in the node’s keystore, you will be asked to overwrite existing keys. The wizard will also generate a network key for your node if needed.
 
@@ -174,6 +175,13 @@ Obtaining these files is as simple as getting the file from the chain builder.
 
 Contact the chain builder and request the `chain-spec.json` and `partner-chains-cli-chain-config.json` files.
 
+### 5.1 Prepare the oracle price provider configuration
+
+1. Copy the sample config from [config/example-config.json](../../config/example-config.json) into the machine that will run your validator.
+2. Store the file at `<node base path>/oracle/node-config.json`, where the node base path matches the value saved in `partner-chains-cli-resources-config.json` (for example: `/var/lib/partner-chains/oracle/node-config.json`).
+3. Adjust the sample to include any additional markets or providers your deployment requires.
+4. When you run the `start-node` wizard, it pushes this JSON into offchain storage before the node starts, so charli3-oracle-core immediately picks up the configured feeds.
+
 ### 6. Run the partner chain node
 
 The start-node wizard is used to start a partner chain node. Make sure that `cardano-node` is running with DB Sync running and fully synced. You will need to provide a link to postgreSQL server running with DB Sync as part of starting the node.
@@ -184,6 +192,7 @@ The start-node wizard is used to start a partner chain node. Make sure that `car
 4. The wizard checks the `partner-chains-cli-chain-config.json` file. If it is missing or invalid, you should obtain it from the chain builder.
 5. If the `db_sync_postgres_connection_string` is missing from the `partner-chain-cli-resources-config.json` file, the wizard prompts for it, using the default value `postgresql://postgres-user:postgres-password@localhost:5432/cexplorer`.
 6. The wizard outputs all relevant parameters and asks if they are correct. If not, you should edit the `partner-chains-cli-chain-config.json` and/or `partner-chain-cli-resources-config.json` files and run the wizard again.
+7. After the confirmation, the wizard loads the oracle configuration into persistent offchain storage via JSON-RPC and then launches the node. Ensure `curl` is available in your `PATH` so the request succeeds.
 
 The wizard sets the required environment variables and starts the node.
 

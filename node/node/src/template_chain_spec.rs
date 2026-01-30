@@ -1,10 +1,13 @@
 use crate::chain_spec::*;
+use charli3_oracle_core::types::config::node::{ChannelId, MessagesConfiguration, TradePair};
 use sc_service::ChainType;
 use sidechain_runtime::{
 	AccountId, AuraConfig, BalancesConfig, GrandpaConfig, NativeTokenManagementConfig,
 	OracleConfig, RuntimeGenesisConfig, SessionCommitteeManagementConfig, SessionConfig,
 	SidechainConfig, SudoConfig, SystemConfig,
 };
+use sp_core::ConstU32;
+use sp_runtime::BoundedVec;
 use std::str::FromStr;
 
 /// Produces template chain spec for Partner Chains.
@@ -20,6 +23,31 @@ pub fn chain_spec() -> Result<ChainSpec, envy::Error> {
 			.unwrap(),
 	]
 	.to_vec();
+
+	let oracle_authorized_nodes =
+		BoundedVec::try_from(endowed_accounts.clone()).expect("Oracle authorized nodes within limit");
+	let oracle_trade_pairs = BoundedVec::try_from(vec![
+		TradePair::from_ticker("WETH-USDC"),
+		TradePair::from_ticker("WBTC-USDC"),
+	])
+	.expect("Oracle trade pairs within limit");
+	let channel_id = |hex_str: &str| -> ChannelId {
+		let bytes = hex::decode(hex_str).expect("Invalid hex string");
+		ChannelId::try_from(bytes).expect("Channel id within limit")
+	};
+	let oracle_channel_mappings: MessagesConfiguration = MessagesConfiguration::try_from(vec![
+		(
+			channel_id("e4c7488e8beafc99b936c312df72bbb091d53904e489c60760ec7dba"),
+			BoundedVec::<u16, ConstU32<64>>::try_from(vec![0u16, 1u16])
+				.expect("Trade pair indexes within limit"),
+		),
+		(
+			channel_id("56bd86ffdff6793f876cde8239dd3e7f3aeae333ee454d0a79ace928"),
+			BoundedVec::<u16, ConstU32<64>>::try_from(vec![0u16])
+				.expect("Trade pair indexes within limit"),
+		),
+	])
+	.expect("Channel mappings within limit");
 	let runtime_genesis_config = RuntimeGenesisConfig {
 		system: SystemConfig { ..Default::default() },
 		balances: BalancesConfig {
@@ -54,9 +82,12 @@ pub fn chain_spec() -> Result<ChainSpec, envy::Error> {
 		},
 		oracle: OracleConfig {
 			min_nodes_for_trusted_aggregation: 1,
+			authorized_nodes: oracle_authorized_nodes,
 			feed_age: 15,
-			outliers_range: 2,
-			divergency: 15,
+			outliers_range: 150,
+			divergency: 50,
+			trade_pairs: oracle_trade_pairs,
+			channels_to_trade_pairs: oracle_channel_mappings,
 			..Default::default()
 		},
 	};

@@ -49,6 +49,7 @@ sp-io = { workspace = true }
 sp-timestamp = { workspace = true }
 sp-inherents = { workspace = true }
 sp-keyring = { workspace = true }
+hex = { workspace = true }
 authority-selection-inherents = { workspace = true }
 frame-system = { workspace = true }
 pallet-transaction-payment = { workspace = true }
@@ -57,6 +58,7 @@ sidechain-domain = { workspace = true }
 sidechain-slots = { workspace = true }
 sp-sidechain = { workspace = true }
 pallet-sidechain-rpc = { workspace = true }
+charli3-oracle-core = { workspace = true }
 pallet-session-validator-management = { workspace = true }
 sp-session-validator-management = { workspace = true }
 sp-session-validator-management-query = { workspace = true }
