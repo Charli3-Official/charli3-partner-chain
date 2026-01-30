@@ -380,8 +380,8 @@ mod tests {
 	use sc_network_test::{Block as TestBlock, *};
 	use sp_application_crypto::{key_types::AURA, AppCrypto};
 	use sp_consensus::{DisableProofRecording, NoNetwork as DummyOracle, Proposal};
-	use sp_consensus_aura::inherents::InherentDataProvider;
 	use sp_consensus_aura::ed25519::AuthorityPair;
+	use sp_consensus_aura::inherents::InherentDataProvider;
 	use sp_consensus_aura::SlotDuration;
 	use sp_inherents::InherentData;
 	use sp_keyring::ed25519::Keyring;

@@ -6,8 +6,8 @@ use crate::permissioned_candidates::PermissionedCandidateKeys;
 use crate::{config::config_fields, *};
 use anyhow::{anyhow, Context};
 use serde::Deserialize;
-use sp_core::{ed25519, Pair};
 use serde::Serialize;
+use sp_core::{ed25519, Pair};
 
 #[cfg(test)]
 mod tests;

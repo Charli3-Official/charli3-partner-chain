@@ -29,3 +29,5 @@ vendor
 result
 
 ogmios_client.log
+*.key
+*.json

@@ -488,7 +488,7 @@ pub(crate) async fn get_token_utxo_for_epoch(
 ) -> Result<Option<TokenTxOutput>, SqlxError> {
 	// First, check if the asset exists and get its ID in a separate query
 	let asset_id = sqlx::query_as::<_, (i64,)>(
-		"SELECT id FROM multi_asset WHERE policy = $1 AND name = $2 LIMIT 1"
+		"SELECT id FROM multi_asset WHERE policy = $1 AND name = $2 LIMIT 1",
 	)
 	.bind(&asset.policy_id.0)
 	.bind(&asset.asset_name.0)

@@ -153,8 +153,7 @@ where
 	{
 		let inherent_data = create_inherent_data::<B>(&inherent_data_providers).await?;
 
-		self
-			.client
+		self.client
 			.runtime_api()
 			.check_inherents(at_hash, block, inherent_data)
 			.map_err(|e| Error::Client(e.into()))?;
