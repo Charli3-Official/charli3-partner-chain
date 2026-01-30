@@ -5,22 +5,7 @@ use sidechain_runtime::{
 	OracleConfig, RuntimeGenesisConfig, SessionCommitteeManagementConfig, SessionConfig,
 	SidechainConfig, SudoConfig, SystemConfig,
 };
-use sp_consensus_aura::ed25519::AuthorityId as AuraId;
-use sp_consensus_grandpa::AuthorityId as GrandpaId;
 use std::str::FromStr;
-
-/// Generate an Aura authority key.
-pub fn authority_keys_from_seed(s: &str) -> (AuraId, GrandpaId) {
-	(get_from_seed::<AuraId>(s), get_from_seed::<GrandpaId>(s))
-}
-
-/// Helper to create a multisig account from signers + threshold
-pub fn get_multisig_account(signers: Vec<AccountId>, threshold: u16) -> AccountId {
-	// Must be sorted!
-	let mut sorted = signers;
-	sorted.sort();
-	pallet_multisig::Pallet::<sidechain_runtime::Runtime>::multi_account_id(&sorted, threshold)
-}
 
 /// Produces template chain spec for Partner Chains.
 /// This code should be run by `partner-chains-cli chain-spec`, to produce JSON chain spec file.
