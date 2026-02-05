@@ -2,3 +2,6 @@
 # dotfiles in the repo root
 /.*
 /target/
+/dev/
+/docs/
+/query_examples/
