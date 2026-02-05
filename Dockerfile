@@ -44,8 +44,10 @@ RUN apt-get update && \
     --no-install-recommends && \
     rm -rf /var/lib/apt/lists/*
 
-# Copy the built binary from builder
-COPY --from=builder /charli3/target/release/* /usr/local/bin
+# Copy the built binaries from builder
+COPY --from=builder /charli3/target/release/partner-chains-node /usr/local/bin/
+COPY --from=builder /charli3/target/release/partner-chains-cli /usr/local/bin/
+COPY --from=builder /charli3/target/release/main-chain-follower-cli /usr/local/bin/
 
 # Create directory for chain data
 RUN mkdir -p /data
