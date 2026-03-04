@@ -1,40 +1,36 @@
-use crate::config::config_fields::{NODE_EXECUTABLE, NODE_EXECUTABLE_DEFAULT};
 use crate::config::ConfigFieldDefinition;
 use crate::io::IOContext;
 use crate::permissioned_candidates::{ParsedPermissionedCandidatesKeys, PermissionedCandidateKeys};
-use crate::{config::config_fields, CmdRun};
-use anyhow::{anyhow, Context};
-use serde::de::DeserializeOwned;
-use serde_json::Value as JValue;
-use sidechain_domain::UtxoId;
-use sp_core::ed25519;
+use crate::runtime_bindings::PartnerChainRuntime;
+use crate::{CmdRun, config::config_fields};
+use anyhow::anyhow;
+use authority_selection_inherents::MaybeFromCandidateKeys;
+use sidechain_domain::{AssetName, MainchainAddress, PolicyId, UtxoId};
+use sp_core::ecdsa;
+use sp_runtime::{AccountId32, DeserializeOwned};
+use std::marker::PhantomData;
 
 #[cfg(test)]
 mod tests;
 
-#[derive(Debug, clap::Parser)]
-pub struct CreateChainSpecCmd;
+#[derive(Clone, Debug, Default, clap::Parser)]
+pub struct CreateChainSpecCmd<T: PartnerChainRuntime> {
+	#[clap(skip)]
+	_phantom: PhantomData<T>,
+}
 
-type SessionKeys = (ed25519::Public, ed25519::Public);
-
-const SESSION_INITIAL_VALIDATORS_PATH: &str =
-	"/genesis/runtimeGenesis/config/session/initialValidators";
-const SESSION_VALIDATOR_MANAGEMENT_INITIAL_AUTHORITIES_PATH: &str =
-	"/genesis/runtimeGenesis/config/sessionCommitteeManagement/initialAuthorities";
-
-impl CmdRun for CreateChainSpecCmd {
+impl<T: PartnerChainRuntime> CmdRun for CreateChainSpecCmd<T> {
 	fn run<C: IOContext>(&self, context: &C) -> anyhow::Result<()> {
 		let config = CreateChainSpecConfig::load(context)?;
 		context.print("This wizard will create a chain spec JSON file according to the provided configuration, using WASM runtime code from the compiled node binary.");
 		Self::print_config(context, &config);
 		if context.prompt_yes_no("Do you want to continue?", true) {
-			Self::run_build_spec_command(context, &config)?;
-			Self::update_chain_spec_authorities(context, &config)?;
+			let content = T::create_chain_spec(&config);
+			context.write_file("chain-spec.json", &serde_json::to_string_pretty(&content)?);
 			context.print("chain-spec.json file has been created.");
 			context.print(
 				"If you are the governance authority, you can distribute it to the validators.",
 			);
-			context.print("Run 'setup-main-chain-state' command to set D-parameter and permissioned candidates on Cardano.");
 			Ok(())
 		} else {
 			context.print("Aborted.");
@@ -43,8 +39,8 @@ impl CmdRun for CreateChainSpecCmd {
 	}
 }
 
-impl CreateChainSpecCmd {
-	fn print_config<C: IOContext>(context: &C, config: &CreateChainSpecConfig) {
+impl<T: PartnerChainRuntime> CreateChainSpecCmd<T> {
+	fn print_config<C: IOContext>(context: &C, config: &CreateChainSpecConfig<T::Keys>) {
 		context.print("Chain parameters:");
 		context.print(format!("- Genesis UTXO: {}", config.genesis_utxo).as_str());
 		context.print("SessionValidatorManagement Main Chain Configuration:");
@@ -52,23 +48,42 @@ impl CreateChainSpecCmd {
 			format!("- committee_candidate_address: {}", config.committee_candidate_address)
 				.as_str(),
 		);
-		context
-			.print(format!("- d_parameter_policy_id: {}", config.d_parameter_policy_id).as_str());
+		context.print(
+			format!("- d_parameter_policy_id: {}", config.d_parameter_policy_id.to_hex_string())
+				.as_str(),
+		);
 		context.print(
 			format!(
 				"- permissioned_candidates_policy_id: {}",
-				config.permissioned_candidates_policy_id
+				config.permissioned_candidates_policy_id.to_hex_string()
 			)
 			.as_str(),
 		);
-		context.print("Native Token Management Configuration (unused if empty):");
-		context.print(&format!("- asset name: {}", config.native_token_asset_name));
-		context.print(&format!("- asset policy ID: {}", config.native_token_policy));
-		context.print(&format!("- illiquid supply address: {}", config.illiquid_supply_address));
+		context.print("Bridge Configuration (unused if empty):");
+		context.print(&format!("- asset name: {}", config.bridge_token_asset_name.to_hex_string()));
+		context
+			.print(&format!("- asset policy ID: {}", config.bridge_token_policy.to_hex_string()));
+		context.print(&format!(
+			"- illiquid circulation supply validator address: {}",
+			config.illiquid_circulation_supply_validator_address
+		));
+		context.print("Governed Map Configuration:");
+		context.print(&format!(
+			"- validator address: {}",
+			config.governed_map_validator_address.clone().unwrap_or_default()
+		));
+		context.print(&format!(
+			"- asset policy ID: {}",
+			config.governed_map_asset_policy_id.clone().unwrap_or_default().to_hex_string()
+		));
 		use colored::Colorize;
-		if config.initial_permissioned_candidates_raw.is_empty() {
+		if config.initial_permissioned_candidates_parsed.is_empty() {
 			context.print("WARNING: The list of initial permissioned candidates is empty. Generated chain spec will not allow the chain to start.".red().to_string().as_str());
-			let update_msg = format!("Update 'initial_permissioned_candidates' field of {} file with keys of initial committee.", config_fields::INITIAL_PERMISSIONED_CANDIDATES.config_file);
+			let update_msg = format!(
+				"Update 'initial_permissioned_candidates' field of {} file with keys of initial committee.",
+				context
+					.config_file_path(config_fields::INITIAL_PERMISSIONED_CANDIDATES.config_file)
+			);
 			context.print(update_msg.red().to_string().as_str());
 			context.print(INITIAL_PERMISSIONED_CANDIDATES_EXAMPLE.yellow().to_string().as_str());
 		} else {
@@ -78,103 +93,34 @@ impl CreateChainSpecCmd {
 			}
 		}
 	}
-
-	fn run_build_spec_command<C: IOContext>(
-		context: &C,
-		config: &CreateChainSpecConfig,
-	) -> anyhow::Result<String> {
-		let node_executable =
-			NODE_EXECUTABLE.save_if_empty(NODE_EXECUTABLE_DEFAULT.to_string(), context);
-		context.set_env_var("GENESIS_UTXO", &config.genesis_utxo.to_string());
-		context.set_env_var(
-			"COMMITTEE_CANDIDATE_ADDRESS",
-			&config.committee_candidate_address.to_string(),
-		);
-		context.set_env_var("D_PARAMETER_POLICY_ID", &config.d_parameter_policy_id.to_string());
-		context.set_env_var(
-			"PERMISSIONED_CANDIDATES_POLICY_ID",
-			&config.permissioned_candidates_policy_id.to_string(),
-		);
-		context.set_env_var("NATIVE_TOKEN_POLICY_ID", &config.native_token_policy);
-		context.set_env_var("NATIVE_TOKEN_ASSET_NAME", &config.native_token_asset_name);
-		context.set_env_var("ILLIQUID_SUPPLY_VALIDATOR_ADDRESS", &config.illiquid_supply_address);
-		context.run_command(
-			format!("{node_executable} build-spec --disable-default-bootnode > chain-spec.json")
-				.to_string()
-				.as_str(),
-		)
-	}
-
-	fn update_chain_spec_authorities<C: IOContext>(
-		context: &C,
-		config: &CreateChainSpecConfig,
-	) -> anyhow::Result<()> {
-		let json = context
-			.read_file("chain-spec.json")
-			.context("Could not read chain-spec.json file. File is expected to exists.")?;
-		let mut chain_spec: serde_json::Value = serde_json::from_str(&json)?;
-
-		let initial_validators = config
-			.initial_permissioned_candidates_parsed
-			.iter()
-			.map(|c| serde_json::to_value((c.account_id_32(), c.session_keys::<SessionKeys>())))
-			.collect::<Result<Vec<serde_json::Value>, _>>()?;
-		let initial_validators = serde_json::Value::Array(initial_validators);
-		Self::update_field(&mut chain_spec, SESSION_INITIAL_VALIDATORS_PATH, initial_validators)?;
-
-		let initial_authorities = config
-			.initial_permissioned_candidates_parsed
-			.iter()
-			.map(|c| serde_json::to_value((c.sidechain, c.session_keys::<SessionKeys>())))
-			.collect::<Result<Vec<serde_json::Value>, _>>()?;
-		let initial_authorities = serde_json::Value::Array(initial_authorities);
-		Self::update_field(
-			&mut chain_spec,
-			SESSION_VALIDATOR_MANAGEMENT_INITIAL_AUTHORITIES_PATH,
-			initial_authorities,
-		)?;
-		context.write_file("chain-spec.json", serde_json::to_string_pretty(&chain_spec)?.as_str());
-		Ok(())
-	}
-
-	fn update_field(
-		chain_spec: &mut JValue,
-		field_name: &str,
-		value: JValue,
-	) -> Result<(), anyhow::Error> {
-		if let Some(field) = chain_spec.pointer_mut(field_name) {
-			*field = value;
-			Ok(())
-		} else {
-			Err(anyhow!(
-				"Internal error: Could not find {field_name} in chain spec file! Possibly this wizard does not support the current chain spec version."
-			))
-		}
-	}
 }
 
+#[allow(missing_docs)]
 #[derive(Debug)]
-struct CreateChainSpecConfig {
-	genesis_utxo: UtxoId,
-	initial_permissioned_candidates_raw: Vec<PermissionedCandidateKeys>,
-	initial_permissioned_candidates_parsed: Vec<ParsedPermissionedCandidatesKeys>,
-	committee_candidate_address: String,
-	d_parameter_policy_id: String,
-	permissioned_candidates_policy_id: String,
-	native_token_policy: String,
-	native_token_asset_name: String,
-	illiquid_supply_address: String,
+/// Configuration that contains all Partner Chain specific data required to create the chain spec
+pub struct CreateChainSpecConfig<Keys> {
+	pub genesis_utxo: UtxoId,
+	pub initial_permissioned_candidates_raw: Vec<PermissionedCandidateKeys>,
+	pub initial_permissioned_candidates_parsed: Vec<ParsedPermissionedCandidatesKeys<Keys>>,
+	pub committee_candidate_address: MainchainAddress,
+	pub d_parameter_policy_id: PolicyId,
+	pub permissioned_candidates_policy_id: PolicyId,
+	pub bridge_token_policy: PolicyId,
+	pub bridge_token_asset_name: AssetName,
+	pub illiquid_circulation_supply_validator_address: MainchainAddress,
+	pub governed_map_validator_address: Option<MainchainAddress>,
+	pub governed_map_asset_policy_id: Option<PolicyId>,
 }
 
-impl CreateChainSpecConfig {
-	pub fn load<C: IOContext>(c: &C) -> Result<Self, anyhow::Error> {
+impl<Keys: MaybeFromCandidateKeys> CreateChainSpecConfig<Keys> {
+	pub(crate) fn load<C: IOContext>(c: &C) -> Result<Self, anyhow::Error> {
 		let initial_permissioned_candidates_raw =
 			load_config_field(c, &config_fields::INITIAL_PERMISSIONED_CANDIDATES)?;
-		let initial_permissioned_candidates_parsed: Vec<ParsedPermissionedCandidatesKeys> =
+		let initial_permissioned_candidates_parsed: Vec<ParsedPermissionedCandidatesKeys<Keys>> =
 			initial_permissioned_candidates_raw
 				.iter()
 				.map(TryFrom::try_from)
-				.collect::<Result<Vec<ParsedPermissionedCandidatesKeys>, anyhow::Error>>()?;
+				.collect::<Result<Vec<ParsedPermissionedCandidatesKeys<Keys>>, anyhow::Error>>()?;
 		Ok(Self {
 			genesis_utxo: load_config_field(c, &config_fields::GENESIS_UTXO)?,
 			initial_permissioned_candidates_raw,
@@ -188,10 +134,131 @@ impl CreateChainSpecConfig {
 				c,
 				&config_fields::PERMISSIONED_CANDIDATES_POLICY_ID,
 			)?,
-			native_token_policy: load_config_field(c, &config_fields::NATIVE_TOKEN_POLICY)?,
-			native_token_asset_name: load_config_field(c, &config_fields::NATIVE_TOKEN_ASSET_NAME)?,
-			illiquid_supply_address: load_config_field(c, &config_fields::ILLIQUID_SUPPLY_ADDRESS)?,
+			bridge_token_policy: load_config_field(c, &config_fields::BRIDGE_TOKEN_POLICY)?,
+			bridge_token_asset_name: load_config_field(c, &config_fields::BRIDGE_TOKEN_ASSET_NAME)?,
+			illiquid_circulation_supply_validator_address: load_config_field(
+				c,
+				&config_fields::ILLIQUID_SUPPLY_ADDRESS,
+			)?,
+			governed_map_validator_address: config_fields::GOVERNED_MAP_VALIDATOR_ADDRESS
+				.load_from_file(c),
+			governed_map_asset_policy_id: config_fields::GOVERNED_MAP_POLICY_ID.load_from_file(c),
 		})
+	}
+
+	/// Returns [pallet_sidechain::GenesisConfig] derived from the config
+	pub fn pallet_sidechain_config<T: pallet_sidechain::Config>(
+		&self,
+		slots_per_epoch: sidechain_slots::SlotsPerEpoch,
+	) -> pallet_sidechain::GenesisConfig<T> {
+		pallet_sidechain::GenesisConfig {
+			genesis_utxo: self.genesis_utxo,
+			slots_per_epoch,
+			_config: PhantomData,
+		}
+	}
+
+	/// Returns [pallet_partner_chains_session::GenesisConfig] derived from the config, using initial permissioned candidates
+	/// as initial validators
+	pub fn pallet_partner_chains_session_config<T: pallet_partner_chains_session::Config>(
+		&self,
+	) -> pallet_partner_chains_session::GenesisConfig<T>
+	where
+		T::ValidatorId: From<AccountId32>,
+		T::Keys: From<Keys>,
+	{
+		pallet_partner_chains_session::GenesisConfig {
+			initial_validators: self
+				.initial_permissioned_candidates_parsed
+				.iter()
+				.map(|c| (c.account_id_32().into(), c.keys.clone().into()))
+				.collect::<Vec<_>>(),
+		}
+	}
+
+	/// Returns [pallet_session_validator_management::GenesisConfig] derived from the config using initial permissioned candidates
+	/// as initial authorities
+	pub fn pallet_session_validator_management_config<
+		T: pallet_session_validator_management::Config,
+	>(
+		&self,
+	) -> pallet_session_validator_management::GenesisConfig<T>
+	where
+		T::AuthorityId: From<ecdsa::Public>,
+		T::AuthorityKeys: From<Keys>,
+		T::CommitteeMember:
+			From<authority_selection_inherents::CommitteeMember<T::AuthorityId, T::AuthorityKeys>>,
+	{
+		pallet_session_validator_management::GenesisConfig {
+			initial_authorities: self
+				.initial_permissioned_candidates_parsed
+				.iter()
+				.map(|c| {
+					authority_selection_inherents::CommitteeMember::permissioned(
+						c.sidechain.into(),
+						c.keys.clone().into(),
+					)
+					.into()
+				})
+				.collect::<Vec<_>>(),
+			main_chain_scripts: sp_session_validator_management::MainChainScripts {
+				committee_candidate_address: self.committee_candidate_address.clone(),
+				d_parameter_policy_id: self.d_parameter_policy_id.clone(),
+				permissioned_candidates_policy_id: self.permissioned_candidates_policy_id.clone(),
+			},
+		}
+	}
+
+	/// Returns [pallet_partner_chains_bridge::GenesisConfig] derived from the config
+	pub fn bridge_config<T: pallet_partner_chains_bridge::Config>(
+		&self,
+	) -> pallet_partner_chains_bridge::GenesisConfig<T> {
+		pallet_partner_chains_bridge::GenesisConfig {
+			main_chain_scripts: Some(sp_partner_chains_bridge::MainChainScripts {
+				token_policy_id: self.bridge_token_policy.clone(),
+				token_asset_name: self.bridge_token_asset_name.clone(),
+				illiquid_circulation_supply_validator_address: self
+					.illiquid_circulation_supply_validator_address
+					.clone(),
+			}),
+			initial_checkpoint: Some(self.genesis_utxo),
+			_marker: PhantomData,
+		}
+	}
+
+	/// Returns [pallet_governed_map::GenesisConfig] derived from the config
+	pub fn governed_map_config<T: pallet_governed_map::Config>(
+		&self,
+	) -> pallet_governed_map::GenesisConfig<T> {
+		pallet_governed_map::GenesisConfig {
+			main_chain_scripts: self.governed_map_validator_address.as_ref().and_then(|addr| {
+				self.governed_map_asset_policy_id.as_ref().map(|policy| {
+					sp_governed_map::MainChainScriptsV1 {
+						validator_address: addr.clone(),
+						asset_policy_id: policy.clone(),
+					}
+				})
+			}),
+			_marker: PhantomData,
+		}
+	}
+}
+
+impl<T> Default for CreateChainSpecConfig<T> {
+	fn default() -> Self {
+		Self {
+			genesis_utxo: Default::default(),
+			initial_permissioned_candidates_raw: Default::default(),
+			initial_permissioned_candidates_parsed: Default::default(),
+			committee_candidate_address: Default::default(),
+			d_parameter_policy_id: Default::default(),
+			permissioned_candidates_policy_id: Default::default(),
+			bridge_token_policy: Default::default(),
+			bridge_token_asset_name: Default::default(),
+			illiquid_circulation_supply_validator_address: Default::default(),
+			governed_map_validator_address: Default::default(),
+			governed_map_asset_policy_id: Default::default(),
+		}
 	}
 }
 
@@ -200,7 +267,7 @@ fn load_config_field<C: IOContext, T: DeserializeOwned>(
 	field: &ConfigFieldDefinition<T>,
 ) -> Result<T, anyhow::Error> {
 	field.load_from_file(context).ok_or_else(|| {
-		context.eprint(format!("The '{}' configuration file is missing or invalid.\nIf you are the governance authority, please make sure you have run the `prepare-configuration` command to generate the chain configuration file.\nIf you are a validator, you can obtain the chain configuration file from the governance authority.", field.config_file).as_str());
+		context.eprint(format!("The '{}' configuration file is missing or invalid.\nIf you are the governance authority, please make sure you have run the `prepare-configuration` command to generate the chain configuration file.\nIf you are a validator, you can obtain the chain configuration file from the governance authority.", context.config_file_path(field.config_file)).as_str());
 		anyhow!("failed to read '{}'", field.path.join("."))
 	})
 }
@@ -208,13 +275,17 @@ fn load_config_field<C: IOContext, T: DeserializeOwned>(
 pub const INITIAL_PERMISSIONED_CANDIDATES_EXAMPLE: &str = r#"Example of 'initial_permissioned_candidates' field with 2 permissioned candidates:
 "initial_permissioned_candidates": [
 	{
-	  "aura_pub_key": "0xd43593c715fdd31c61141abd04a99fd6822c8558854ccde49a5684e7a56da27d",
-	  "grandpa_pub_key": "0x88dc3417d5058ec4b4503e0c12ea1a0a89be200f498922423d4334014fa6b0ee",
-	  "sidechain_pub_key": "0x020a1091341fe5664bfa1782d5e0477968906ac916b04cb365ec3153755684d9a1"
+		"partner_chains_key": "0x020a1091341fe5664bfa1782d5e0477968906ac916b04cb365ec3153755684d9a1",
+		"keys": {
+			"aura": "0xd43593c715fdd31c61141abd04a99fd6822c8558854ccde49a5684e7a56da27d",
+			"gran": "0x88dc3417d5058ec4b4503e0c12ea1a0a89be200f498922423d4334014fa6b0ee"
+		}
 	},
 	{
-	  "aura_pub_key": "0x8eaf04151687736326c9fea17e25fc5287613698c912909cb226aa4794f26a48",
-	  "grandpa_pub_key": "0xd17c2d7823ebf260fd138f2d7e27d114cb145d968b5ff5006125f2414fadae69",
-	  "sidechain_pub_key": "0x0390084fdbf27d2b79d26a4f13f0cdd982cb755a661969143c37cbc49ef5b91f27"
+		"partner_chains_key": "0x0390084fdbf27d2b79d26a4f13f0cdd982cb755a661969143c37cbc49ef5b91f27",
+		"keys": {
+			"aura": "0x8eaf04151687736326c9fea17e25fc5287613698c912909cb226aa4794f26a48",
+			"gran": "0xd17c2d7823ebf260fd138f2d7e27d114cb145d968b5ff5006125f2414fadae69"
+		}
 	}
 ]"#;

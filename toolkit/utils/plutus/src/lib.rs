@@ -1,35 +1,68 @@
+//! Minimal Plutus data types and encoding implementation
+//!
+//! This crate implements the `Data` type used by [Untyped Plutus Core], a low-level language
+//! used by Cardano smart contracts, along with traits for encoding Rust types as Plutus data
+//! and Plutus data CBOR bytes.
+//!
+//! This crate is developed as part of the [Partner Chains toolkit] for use in [no_std] contexts
+//! where existing alternatives ([uplc], [cardano-serialization-lib]) can not be used, and as
+//! such is not intended to be feature-complete for general use.
+//!
+//! [Untyped Plutus Core]: https://plutonomicon.github.io/plutonomicon/uplc
+//! [Partner Chains toolkit]: https://github.com/input-output-hk/partner-chains
+//! [no_std]: https://doc.rust-lang.org/reference/names/preludes.html?highlight=no_std#r-names.preludes.extern.no_std
+//! [uplc]: https://github.com/aiken-lang/aiken/tree/main/crates/uplc
+//! [cardano-serialization-lib]: https://github.com/Emurgo/cardano-serialization-lib
 #![no_std]
+#![deny(missing_docs)]
 
 mod cbor;
-#[cfg(test)]
-mod tests;
 
 extern crate alloc;
 
 use crate::Datum::*;
-use alloc::string::String;
+#[doc(hidden)]
 pub use alloc::{vec, vec::Vec};
 use core::fmt::{Debug, Formatter};
 use num_bigint::BigInt;
-use num_traits::ToPrimitive;
-use serde_json::{json, Map as JMap, Value as JValue};
 
+/// Plutus datum type
 #[derive(Clone, PartialEq)]
 pub enum Datum {
+	/// Integer value
 	IntegerDatum(BigInt),
+	/// Byte string value
 	ByteStringDatum(Vec<u8>),
-	ConstructorDatum { constructor: u64, fields: Vec<Datum> },
+	/// Constructor value
+	///
+	/// A Plutus constructor datum consists of an ordered list of Plutus field values together
+	/// with numeric constructor ID that marks the constructor variant used. These can only be
+	/// interpreted against an external schema that specifies expected content of `fields` and
+	/// their interpretation.
+	ConstructorDatum {
+		/// Constructor variant number
+		constructor: u64,
+		/// List of field values
+		fields: Vec<Datum>,
+	},
+	/// List of values
 	ListDatum(Vec<Datum>),
+	/// Key-value mapping
 	MapDatum(Vec<MapDatumEntry>),
 }
 
+/// Key-value pair stored in [Datum::MapDatum]
 #[derive(Clone, Debug, PartialEq)]
 pub struct MapDatumEntry {
+	/// Key
 	key: Datum,
+	/// Value
 	value: Datum,
 }
 
+/// Trait for types that can be encoded as a Plutus [Datum].
 pub trait ToDatum {
+	/// Encodes `self` to [Datum].
 	fn to_datum(&self) -> Datum;
 }
 
@@ -86,6 +119,7 @@ impl Datum {
 		IntegerDatum(BigInt::from(value))
 	}
 
+	/// Returns byte content if `self` is a [Datum::ByteStringDatum] and [None] otherwise.
 	pub fn as_bytestring(&self) -> Option<&Vec<u8>> {
 		match self {
 			ByteStringDatum(bytes) => Some(bytes),
@@ -123,143 +157,13 @@ impl Debug for Datum {
 	}
 }
 
-impl TryFrom<&JValue> for Datum {
-	type Error = FromJsonError;
-
-	fn try_from(value: &JValue) -> Result<Self, Self::Error> {
-		fn expect_list(value: &JValue) -> Result<Vec<Datum>, FromJsonError> {
-			let v: &Vec<JValue> = value.as_array().ok_or(FromJsonError::ExpectedArrayOfDatums)?;
-			let list: Vec<Result<Datum, FromJsonError>> = v.iter().map(TryFrom::try_from).collect();
-			list.into_iter().collect()
-		}
-
-		fn expect_fields(item: Option<(&String, &JValue)>) -> Result<Vec<Datum>, FromJsonError> {
-			match item {
-				Some((key, value)) if key.as_str() == "fields" => {
-					let fields =
-						expect_list(value).map_err(|_| FromJsonError::ExpectedFieldsKeyValue)?;
-					Ok(fields)
-				},
-				_ => Err(FromJsonError::ExpectedFieldsKeyValue),
-			}
-		}
-
-		fn expect_constructor(item: Option<(&String, &JValue)>) -> Result<u64, FromJsonError> {
-			match item {
-				Some((key, value)) if key.as_str() == "constructor" => {
-					value.as_u64().ok_or(FromJsonError::ExpectedConstructorKeyValue)
-				},
-				_ => Err(FromJsonError::ExpectedConstructorKeyValue),
-			}
-		}
-
-		fn expect_map_entry(value: &JValue) -> Result<MapDatumEntry, FromJsonError> {
-			match value.as_object() {
-				Some(map) => {
-					let key = map.get("key").ok_or(FromJsonError::ExpectedDatumMapEntry)?;
-					let key: Datum = TryFrom::try_from(key)?;
-					let value = map.get("value").ok_or(FromJsonError::ExpectedDatumMapEntry)?;
-					let value: Datum = TryFrom::try_from(value)?;
-					Ok(MapDatumEntry { key, value })
-				},
-				_ => Err(FromJsonError::ExpectedDatumMapEntry),
-			}
-		}
-		fn from_map(map: &JMap<String, JValue>) -> Result<Datum, FromJsonError> {
-			let mut iter = map.into_iter();
-			let first = iter.next();
-			let second = iter.next();
-			match first {
-				Some((key, value)) => match key.as_str() {
-					"int" => value
-						.as_u64()
-						.ok_or(FromJsonError::ExpectedIntegerDatumValue)
-						.map(|int| int.to_datum()),
-					"bytes" => {
-						let str: &str =
-							value.as_str().ok_or(FromJsonError::ExpectedHexEncodedBytes)?;
-						let bytes: Vec<u8> =
-							hex::decode(str).map_err(|_| FromJsonError::ExpectedHexEncodedBytes)?;
-						Ok(bytes.to_datum())
-					},
-					"list" => {
-						let list = expect_list(value)?;
-						Ok(ListDatum(list))
-					},
-					"constructor" => {
-						let constructor: u64 =
-							value.as_u64().ok_or(FromJsonError::ExpectedConstructorKeyValue)?;
-						let fields = expect_fields(second)?;
-						Ok(ConstructorDatum { constructor, fields })
-					},
-					"fields" => {
-						let fields = expect_list(value)
-							.map_err(|_| FromJsonError::ExpectedFieldsKeyValue)?;
-						let constructor = expect_constructor(second)?;
-						Ok(ConstructorDatum { constructor, fields })
-					},
-					"map" => {
-						let v: &Vec<JValue> =
-							value.as_array().ok_or(FromJsonError::ExpectedArrayOfDatums)?;
-						let entries: Vec<Result<MapDatumEntry, FromJsonError>> =
-							v.iter().map(expect_map_entry).collect();
-						let map: Result<Vec<MapDatumEntry>, FromJsonError> =
-							entries.into_iter().collect();
-						Ok(MapDatum(map?))
-					},
-					_ => Err(FromJsonError::ExpectedDatum),
-				},
-				None => Err(FromJsonError::ExpectedDatum),
-			}
-		}
-
-		match value {
-			JValue::Object(map) => from_map(map),
-			_ => Err(FromJsonError::ExpectedDatum),
-		}
-	}
-}
-
-impl From<&Datum> for JValue {
-	fn from(value: &Datum) -> Self {
-		match value {
-			IntegerDatum(int) => {
-				json!({"int": int.to_i64().expect("integers exceeding i64 are not supported")})
-			},
-			ByteStringDatum(bytes) => json!({ "bytes": hex::encode(bytes) }),
-			ListDatum(list) => {
-				let list: Vec<JValue> = list.iter().map(Self::from).collect();
-				json!({ "list": list })
-			},
-			ConstructorDatum { constructor, fields } => {
-				let fields: Vec<JValue> = fields.iter().map(Self::from).collect();
-				json!({"constructor": constructor, "fields": fields })
-			},
-			MapDatum(map) => {
-				let map: Vec<JValue> = map
-					.iter()
-					.map(|e| json!({"key": Self::from(&e.key), "value": Self::from(&e.value)}))
-					.collect();
-				json!({ "map": map })
-			},
-		}
-	}
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum FromJsonError {
-	ExpectedArrayOfDatums,
-	ExpectedHexEncodedBytes,
-	ExpectedConstructorKeyValue,
-	ExpectedDatum,
-	ExpectedFieldsKeyValue,
-	ExpectedIntegerDatumValue,
-	ExpectedDatumMapEntry,
-}
-
-// tip: this function accepts Option<T> for any T: Datum
-//      so it's better to call it with explicit type to avoid hard to
-//      find bugs when types change
+/// Encodes a message as a Plutus [Datum] and returns [CBOR] encoding of this datum.
+///
+/// tip: this function accepts `Option<T>` for any `T: Datum`
+///      so it's better to call it with explicit type to avoid hard to
+///      find bugs when types change
+///
+/// [CBOR]: https://cbor.io
 pub fn to_datum_cbor_bytes<T: ToDatum>(msg: T) -> Vec<u8> {
 	minicbor::to_vec(msg.to_datum()).expect("Infallible error type never fails")
 }

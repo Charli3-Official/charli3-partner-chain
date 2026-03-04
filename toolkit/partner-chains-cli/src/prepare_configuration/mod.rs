@@ -1,42 +1,87 @@
+use crate::CmdRun;
+use crate::cmd_traits::{GetScriptsData, InitGovernance};
+use crate::config::config_fields::{BOOTNODES, SUBSTRATE_NODE_DATA_BASE_PATH};
+use crate::generate_keys::network_key_path;
+use crate::io::IOContext;
+use crate::prepare_configuration::prepare_main_chain_config::prepare_main_chain_config;
+use crate::prepare_configuration::select_genesis_utxo::select_genesis_utxo;
+use anyhow::Context;
+use libp2p_identity::Keypair;
+use ogmios_client::query_ledger_state::{QueryLedgerState, QueryUtxoByUtxoId};
+use ogmios_client::query_network::QueryNetwork;
+use ogmios_client::transactions::Transactions;
+use partner_chains_cardano_offchain::await_tx::FixedDelayRetries;
+use partner_chains_cardano_offchain::cardano_keys::CardanoPaymentSigningKey;
+use partner_chains_cardano_offchain::csl::NetworkTypeExt;
+use partner_chains_cardano_offchain::governance::MultiSigParameters;
+use partner_chains_cardano_offchain::scripts_data::{ScriptsData, get_scripts_data};
+use sidechain_domain::{McTxHash, UtxoId};
+use std::net::Ipv4Addr;
+use std::str::FromStr;
+use std::vec;
+
 mod init_governance;
 mod prepare_cardano_params;
 mod prepare_main_chain_config;
 mod select_genesis_utxo;
 
-use crate::config::config_fields::{BOOTNODES, SUBSTRATE_NODE_DATA_BASE_PATH};
-use crate::config::config_values::DEFAULT_CHAIN_NAME;
-use crate::generate_keys::network_key_path;
-use crate::io::IOContext;
-use crate::prepare_configuration::prepare_main_chain_config::prepare_main_chain_config;
-use crate::prepare_configuration::select_genesis_utxo::select_genesis_utxo;
-use crate::prepare_configuration::PrepareConfigurationError::NetworkKeyNotFoundError;
-use crate::CmdRun;
-use anyhow::Context;
-use libp2p_identity::Keypair;
-use std::net::Ipv4Addr;
-use std::str::FromStr;
-use std::vec;
-use thiserror::Error;
-
-#[derive(Debug, clap::Parser)]
-pub struct PrepareConfigurationCmd {}
+#[derive(Clone, Debug, clap::Parser)]
+pub struct PrepareConfigurationCmd {
+	#[clap(flatten)]
+	common_arguments: crate::CommonArguments,
+}
 
 impl CmdRun for PrepareConfigurationCmd {
 	fn run<C: IOContext>(&self, context: &C) -> anyhow::Result<()> {
+		context.eprint(INTRO);
 		establish_bootnodes(context)?;
-		let (genesis_utxo, ogmios_config) = select_genesis_utxo(context)?;
-		let _ = init_governance::run_init_governance(genesis_utxo, &ogmios_config, context)?;
-		prepare_main_chain_config(context, &ogmios_config, genesis_utxo)?;
-		context.eprint("🚀 All done!");
-		Ok(())
+		let (genesis_utxo, private_key, ogmios_config) = select_genesis_utxo(context)?;
+		if let Some(_tx_id) = init_governance::run_init_governance(
+			self.common_arguments.retries(),
+			genesis_utxo,
+			&private_key,
+			&ogmios_config,
+			context,
+		)? {
+			prepare_main_chain_config(context, &ogmios_config, genesis_utxo)?;
+			context.eprint("🚀 Chain configuration wizards completed successufully!");
+			Ok(())
+		} else {
+			context
+				.eprint("Chain governance has not been initialized. Please run the wizard again.");
+			Ok(())
+		}
 	}
 }
 
 fn establish_bootnodes(context: &impl IOContext) -> anyhow::Result<()> {
-	context.eprint(INTRO);
+	match peer_id_from_config(context)? {
+		Some(peer_id) => {
+			let configure = context.prompt_yes_no(
+				&format!(
+					"Do you want to configure a single bootnode with your peer id '{peer_id}'?"
+				),
+				true,
+			);
+			if configure {
+				configure_bootnode(peer_id, context)
+			} else {
+				Ok(BOOTNODES.save_to_file(&vec![], context))
+			}
+		},
+		None => {
+			let continue_without_bootnode =
+				context.prompt_yes_no("Could not read network secret key from the base directory. Do you want to continue without configuring bootnode?", true);
+			if continue_without_bootnode {
+				Ok(BOOTNODES.save_to_file(&vec![], context))
+			} else {
+				std::process::exit(0)
+			}
+		},
+	}
+}
 
-	let peer_id = peer_id_from_config(context)?;
-
+fn configure_bootnode(peer_id: String, context: &impl IOContext) -> anyhow::Result<()> {
 	let (default_protocol, default_hostname_or_ip, default_port) = read_bootnode_defaults(context);
 
 	let protocol = choose_protocol(context, default_protocol);
@@ -66,7 +111,7 @@ fn establish_bootnodes(context: &impl IOContext) -> anyhow::Result<()> {
 	};
 
 	BOOTNODES.save_to_file(&vec![bootnode], context);
-	context.eprint(&outro());
+	context.eprint(&outro(context.chain_config_file_path()));
 	Ok(())
 }
 
@@ -100,20 +145,18 @@ fn deconstruct_bootnode(bootnode_opt: Option<String>) -> Option<(Protocol, Strin
 	Some((protocol, hostname, port))
 }
 
-fn peer_id_from_config(context: &impl IOContext) -> anyhow::Result<String> {
-	let chain_name: String = DEFAULT_CHAIN_NAME.into();
-
+fn peer_id_from_config(context: &impl IOContext) -> anyhow::Result<Option<String>> {
 	let substrate_node_base_path =
 		SUBSTRATE_NODE_DATA_BASE_PATH.prompt_with_default_from_file_and_save(context);
 
-	let network_key_path = network_key_path(&substrate_node_base_path, &chain_name);
-
-	peer_id_from_network_key(
-		context
-			.read_file(&network_key_path)
-			.as_deref()
-			.ok_or(NetworkKeyNotFoundError(network_key_path))?,
-	)
+	let network_key_path = network_key_path(&substrate_node_base_path);
+	Ok(match context.read_file(&network_key_path).as_deref() {
+		Some(network_key) => Some(peer_id_from_network_key(network_key)?),
+		None => {
+			context.print(&format!("Could not read network key from {}", network_key_path));
+			None
+		},
+	})
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -152,10 +195,18 @@ impl FromStr for Protocol {
 	}
 }
 
-const INTRO: &str = "This 🧙 wizard will generate chain config file";
+const INTRO: &str =
+	"This 🧙 wizard will:
+* establish single bootnode configuration (to be later included in chain-spec file)
+* choose Genesis UTXO on Cardano
+* initialize Partner Chains Governance on Cardano
+* establish Partner Chains Smart Contracts addresses and policies (to be later included in chain-spec file)";
 
-fn outro() -> String {
-	format!("Bootnode saved successfully. Keep in mind that you can manually modify {}, to edit bootnodes.", BOOTNODES.config_file)
+fn outro(chain_config_file_path: String) -> String {
+	format!(
+		"Bootnode saved successfully. Keep in mind that you can manually modify {}, to edit bootnodes.",
+		chain_config_file_path
+	)
 }
 
 const CHOOSE_PROTOCOL_PROMPT: &str = "Your bootnode should be accessible via:";
@@ -165,12 +216,6 @@ const DEFAULT_PORT: u16 = 3033;
 const CHOOSE_HOSTNAME_PROMPT: &str = "Enter bootnode hostname";
 
 const CHOOSE_IP_ADDRESS_PROMPT: &str = "Enter bootnode IP address";
-
-#[derive(Error, Debug)]
-enum PrepareConfigurationError {
-	#[error("⚠️ Network key not found under {0}. Please run the `generate-keys` command first")]
-	NetworkKeyNotFoundError(String),
-}
 
 fn dns_bootnode(hostname: &str, port: u16, peer_id: &str) -> String {
 	format!("/dns/{}/tcp/{}/p2p/{}", hostname, port, peer_id)
@@ -186,41 +231,87 @@ fn peer_id_from_network_key(key_str: &str) -> anyhow::Result<String> {
 	Ok(keypair.public().to_peer_id().to_base58())
 }
 
+impl<T> InitGovernance for T
+where
+	T: QueryLedgerState + Transactions + QueryNetwork + QueryUtxoByUtxoId,
+{
+	async fn init_governance(
+		&self,
+		await_tx: FixedDelayRetries,
+		governance_parameters: &MultiSigParameters,
+		payment_key: &CardanoPaymentSigningKey,
+		genesis_utxo_id: UtxoId,
+	) -> Result<McTxHash, String> {
+		partner_chains_cardano_offchain::init_governance::run_init_governance(
+			governance_parameters,
+			payment_key,
+			Some(genesis_utxo_id),
+			self,
+			await_tx,
+		)
+		.await
+		.map(|result| result.tx_hash)
+		.map_err(|e| e.to_string())
+	}
+}
+
+impl<T: QueryNetwork> GetScriptsData for T {
+	async fn get_scripts_data(&self, genesis_utxo: UtxoId) -> Result<ScriptsData, String> {
+		let network = self
+			.shelley_genesis_configuration()
+			.await
+			.map_err(|e| format!("Ogmios error: {e}"))?
+			.network
+			.to_csl();
+		get_scripts_data(genesis_utxo, network).map_err(|e| e.to_string())
+	}
+}
+
 #[cfg(test)]
 pub mod tests {
 	use super::*;
-	use crate::config::config_fields::{BOOTNODES, SUBSTRATE_NODE_DATA_BASE_PATH};
-	use crate::config::{ConfigFieldDefinition, SelectOptions, RESOURCES_CONFIG_FILE_PATH};
-	use crate::prepare_configuration::PrepareConfigurationError::NetworkKeyNotFoundError;
+	use crate::config::{ConfigFieldDefinition, SelectOptions};
 	use crate::prepare_configuration::Protocol::{Dns, Ipv4};
-	use crate::tests::{MockIO, MockIOContext};
+	use crate::tests::{CHAIN_CONFIG_FILE_PATH, MockIO, MockIOContext, RESOURCES_CONFIG_FILE_PATH};
+	use crate::{CommonArguments, verify_json};
 
 	const KEY: &str = "962515971a22aa95706c2109ba6e9502c7f39b33bdf63024f46f77894424f1fe";
-	pub const CHAIN_NAME: &str = "partner_chains_template";
 	pub const DATA_PATH: &str = "/path/to/data";
 
 	fn network_key_file() -> String {
-		format!("{DATA_PATH}/chains/{CHAIN_NAME}/network/secret_ed25519")
+		format!("{DATA_PATH}/network/secret_ed25519")
 	}
 
 	pub mod scenarios {
 		use super::*;
-		use crate::config::config_fields::{BOOTNODES, SUBSTRATE_NODE_DATA_BASE_PATH};
+		use crate::config::config_fields::SUBSTRATE_NODE_DATA_BASE_PATH;
 		use crate::prepare_configuration::Protocol::{Dns, Ipv4};
 
 		pub fn show_intro() -> MockIO {
-			MockIO::Group(vec![MockIO::eprint("This 🧙 wizard will generate chain config file")])
+			MockIO::Group(vec![MockIO::eprint(
+				"This 🧙 wizard will:
+* establish single bootnode configuration (to be later included in chain-spec file)
+* choose Genesis UTXO on Cardano
+* initialize Partner Chains Governance on Cardano
+* establish Partner Chains Smart Contracts addresses and policies (to be later included in chain-spec file)",
+			)])
 		}
 
 		pub fn read_config() -> MockIO {
-			MockIO::Group(vec![
-				prompt_with_default_and_save_to_existing_file(
-					SUBSTRATE_NODE_DATA_BASE_PATH,
-					SUBSTRATE_NODE_DATA_BASE_PATH.default,
-					DATA_PATH,
-				),
-				MockIO::file_read(&network_key_file()),
-			])
+			MockIO::Group(vec![prompt_with_default(
+				SUBSTRATE_NODE_DATA_BASE_PATH,
+				SUBSTRATE_NODE_DATA_BASE_PATH.default,
+				DATA_PATH,
+			)])
+		}
+
+		pub fn choose_to_configure_bootnode(choice: bool) -> MockIO {
+			MockIO::PromptYN {
+				prompt: "Do you want to configure a single bootnode with your peer id '12D3KooWSi9ys81fpG9ibuVWh6w6egfcTUM8L1iSJSpfFtMLMLG9'?"
+					.to_string(),
+				default: true,
+				choice,
+			}
 		}
 
 		pub fn pick_ip_protocol_with_defaults() -> MockIO {
@@ -256,15 +347,11 @@ pub mod tests {
 			])
 		}
 
-		pub fn save_ip_bootnode(key: &str, port: u16) -> MockIO {
+		pub fn ip_bootnode(key: &str, port: u16) -> serde_json::Value {
 			let peer_id = peer_id_from_network_key(key).unwrap();
-			let bootnodes_value = format!("/ip4/10.2.2.4/tcp/{port}/p2p/{peer_id}");
-			MockIO::Group(vec![MockIO::file_write_json(
-				BOOTNODES.config_file,
-				serde_json::json!({
-					"bootnodes": [bootnodes_value]
-				}),
-			)])
+			serde_json::json!({
+				"bootnodes": [format!("/ip4/10.2.2.4/tcp/{port}/p2p/{peer_id}")]
+			})
 		}
 
 		pub fn pick_dns_protocol_with_defaults() -> MockIO {
@@ -291,15 +378,11 @@ pub mod tests {
 			])
 		}
 
-		pub fn save_dns_bootnode(key: &str, port: u16) -> MockIO {
+		pub fn dns_bootnode(key: &str, port: u16) -> serde_json::Value {
 			let peer_id = peer_id_from_network_key(key).unwrap();
-			let bootnodes_value = format!("/dns/iog.io/tcp/{port}/p2p/{peer_id}");
-			MockIO::Group(vec![MockIO::file_write_json(
-				BOOTNODES.config_file,
-				serde_json::json!({
-					"bootnodes": [bootnodes_value]
-				}),
-			)])
+			serde_json::json!({
+				"bootnodes": [format!("/dns/iog.io/tcp/{port}/p2p/{peer_id}")]
+			})
 		}
 	}
 
@@ -318,14 +401,18 @@ pub mod tests {
 	#[test]
 	fn happy_path_ip() {
 		let mock_context = context_with_config(KEY).with_expected_io(vec![
-			scenarios::show_intro(),
 			scenarios::read_config(),
+			scenarios::choose_to_configure_bootnode(true),
 			scenarios::pick_ip_protocol_with_defaults(),
-			scenarios::save_ip_bootnode(KEY, DEFAULT_PORT),
-			MockIO::eprint(&outro()),
+			MockIO::eprint(&outro(CHAIN_CONFIG_FILE_PATH.to_owned())),
 		]);
 
 		let result = establish_bootnodes(&mock_context);
+		verify_json!(
+			mock_context,
+			CHAIN_CONFIG_FILE_PATH,
+			scenarios::ip_bootnode(KEY, DEFAULT_PORT)
+		);
 
 		result.expect("should succeed");
 	}
@@ -333,42 +420,55 @@ pub mod tests {
 	#[test]
 	fn happy_path_hostname() {
 		let mock_context = context_with_config(KEY).with_expected_io(vec![
-			scenarios::show_intro(),
 			scenarios::read_config(),
+			scenarios::choose_to_configure_bootnode(true),
 			scenarios::pick_dns_protocol_with_defaults(),
-			scenarios::save_dns_bootnode(KEY, DEFAULT_PORT),
-			MockIO::eprint(&outro()),
+			MockIO::eprint(&outro(CHAIN_CONFIG_FILE_PATH.to_owned())),
 		]);
 
 		let result = establish_bootnodes(&mock_context);
 
 		result.expect("should succeed");
+		verify_json!(
+			mock_context,
+			CHAIN_CONFIG_FILE_PATH,
+			scenarios::dns_bootnode(KEY, DEFAULT_PORT)
+		);
+	}
+
+	#[test]
+	fn happy_path_no_bootnode() {
+		let mock_context = context_with_config(KEY).with_expected_io(vec![
+			scenarios::read_config(),
+			scenarios::choose_to_configure_bootnode(false),
+		]);
+		let result = establish_bootnodes(&mock_context);
+		result.expect("should succeed");
+		verify_json!(mock_context, CHAIN_CONFIG_FILE_PATH, serde_json::json!({"bootnodes": []}));
 	}
 
 	#[test]
 	fn propose_saved_defaults_but_pick_different() {
 		let mock_context = context_with_config(KEY)
 			.with_json_file(
-				BOOTNODES.config_file,
+				CHAIN_CONFIG_FILE_PATH,
 				serde_json::json!({
 					"bootnodes": ["/ip4/ip_address/tcp/3034/p2p/12D3KooWWi9ys81fpG9ibuVWh6w6egfcTUM8L1iSJSpfFtMLMLG8"]
 				}),
 			)
 			.with_expected_io(vec![
-				scenarios::show_intro(),
 				scenarios::read_config(),
-				MockIO::file_read(BOOTNODES.config_file),
+				scenarios::choose_to_configure_bootnode(true),
 				scenarios::pick_dns_protocol(
 					vec![Ipv4.into(), Dns.into()],
 					3034,
 					Dns.default_address().to_string(),
 				),
-				MockIO::file_read(BOOTNODES.config_file),
-				scenarios::save_dns_bootnode(KEY, 3034),
-				MockIO::eprint(&outro()),
+				MockIO::eprint(&outro(CHAIN_CONFIG_FILE_PATH.to_owned())),
 			]);
 
 		let result = establish_bootnodes(&mock_context);
+		verify_json!(mock_context, CHAIN_CONFIG_FILE_PATH, scenarios::dns_bootnode(KEY, 3034));
 
 		result.expect("should succeed");
 	}
@@ -377,62 +477,70 @@ pub mod tests {
 	fn propose_saved_defaults_and_pick_it() {
 		let mock_context = context_with_config(KEY)
 			.with_json_file(
-				BOOTNODES.config_file,
+				CHAIN_CONFIG_FILE_PATH,
 				serde_json::json!({
 					"bootnodes": ["/ip4/ip_address/tcp/3034/p2p/12D3KooWWi9ys81fpG9ibuVWh6w6egfcTUM8L1iSJSpfFtMLMLG8"]
 				}),
 			)
 			.with_expected_io(vec![
-				scenarios::show_intro(),
 				scenarios::read_config(),
-				MockIO::file_read(BOOTNODES.config_file),
+				scenarios::choose_to_configure_bootnode(true),
 				scenarios::pick_ip_protocol(
 					vec![Ipv4.into(), Dns.into()],
 					3034,
 					"ip_address".to_string(),
 				),
-				MockIO::file_read(BOOTNODES.config_file),
-				scenarios::save_ip_bootnode(KEY, 3034),
-				MockIO::eprint(&outro()),
+				MockIO::eprint(&outro(CHAIN_CONFIG_FILE_PATH.to_owned())),
 			]);
 
 		let result = establish_bootnodes(&mock_context);
+		verify_json!(mock_context, CHAIN_CONFIG_FILE_PATH, scenarios::ip_bootnode(KEY, 3034));
 
 		result.expect("should succeed");
 	}
 
 	#[test]
-	fn error_without_network_key_file() {
+	fn continue_without_network_key_file_when_user_agrees() {
 		let mock_context = MockIOContext::new()
-			.with_json_file(RESOURCES_CONFIG_FILE_PATH, serde_json::json!({}))
-			.with_expected_io(vec![scenarios::show_intro(), scenarios::read_config()]);
+			.with_json_file(CHAIN_CONFIG_FILE_PATH, serde_json::json!({}))
+			.with_expected_io(vec![
+				scenarios::read_config(),
+				MockIO::print(&format!("Could not read network key from {}", network_key_file())),
+				MockIO::prompt_yes_no(
+					"Could not read network secret key from the base directory. Do you want to continue without configuring bootnode?",
+					true,
+					true,
+				),
+			]);
 
-		let result = PrepareConfigurationCmd {}.run(&mock_context);
-
-		let error = result.expect_err("should return error");
-		assert_eq!(error.to_string(), NetworkKeyNotFoundError(network_key_file()).to_string());
+		let result = establish_bootnodes(&mock_context);
+		result.expect("should succeed");
+		verify_json!(mock_context, CHAIN_CONFIG_FILE_PATH, serde_json::json!({"bootnodes": []}));
 	}
 
 	#[test]
 	fn do_not_error_without_resources_config_file() {
 		let mock_context =
 			MockIOContext::new().with_file(&network_key_file(), KEY).with_expected_io(vec![
-				scenarios::show_intro(),
-				MockIO::prompt(
-					SUBSTRATE_NODE_DATA_BASE_PATH.name,
-					SUBSTRATE_NODE_DATA_BASE_PATH.default,
-					DATA_PATH,
-				),
-				save_to_new_file(SUBSTRATE_NODE_DATA_BASE_PATH, DATA_PATH),
-				MockIO::file_read(&network_key_file()),
+				scenarios::read_config(),
+				scenarios::choose_to_configure_bootnode(true),
 				scenarios::pick_ip_protocol_with_defaults(),
-				scenarios::save_ip_bootnode(KEY, DEFAULT_PORT),
-				MockIO::eprint(&outro()),
+				MockIO::eprint(&outro(CHAIN_CONFIG_FILE_PATH.to_owned())),
 			]);
 
 		let result = establish_bootnodes(&mock_context);
 
 		result.expect("should succeed");
+		verify_json!(
+			mock_context,
+			RESOURCES_CONFIG_FILE_PATH,
+			serde_json::json!({"substrate_node_base_path": DATA_PATH})
+		);
+		verify_json!(
+			mock_context,
+			CHAIN_CONFIG_FILE_PATH,
+			scenarios::ip_bootnode(KEY, DEFAULT_PORT)
+		);
 	}
 
 	#[test]
@@ -440,6 +548,7 @@ pub mod tests {
 		let mock_context = context_with_config(KEY).with_expected_io(vec![
 			scenarios::show_intro(),
 			scenarios::read_config(),
+			scenarios::choose_to_configure_bootnode(true),
 			scenarios::pick_chosen_ip_protocol(
 				vec![Dns.into(), Ipv4.into()],
 				DEFAULT_PORT,
@@ -448,70 +557,39 @@ pub mod tests {
 			),
 		]);
 
-		let result = PrepareConfigurationCmd {}.run(&mock_context);
+		let result =
+			PrepareConfigurationCmd { common_arguments: common_arguments() }.run(&mock_context);
 
 		let error = result.expect_err("should return error");
 		assert!(error.to_string().contains("⚠️ Invalid IP address"));
 	}
 
-	pub fn save_to_existing_file<T>(
-		field_definition: ConfigFieldDefinition<'_, T>,
-		value: &str,
-	) -> MockIO {
-		MockIO::Group(vec![
-			MockIO::file_read(field_definition.config_file),
-			MockIO::file_write_json_contains(
-				field_definition.config_file,
-				&field_definition.json_pointer(),
-				value,
-			),
-		])
+	fn common_arguments() -> CommonArguments {
+		CommonArguments { retry_delay_seconds: 5, retry_count: 59 }
 	}
 
-	pub fn save_to_new_file<T>(
-		field_definition: ConfigFieldDefinition<'_, T>,
-		value: &str,
-	) -> MockIO {
-		MockIO::Group(vec![MockIO::file_write_json_contains(
-			field_definition.config_file,
-			&field_definition.json_pointer(),
-			value,
-		)])
-	}
-
-	pub fn prompt_and_save_to_existing_file<T>(
-		field_definition: ConfigFieldDefinition<'_, T>,
-		value: &str,
-	) -> MockIO {
+	pub fn prompt<T>(field_definition: ConfigFieldDefinition<'_, T>, value: &str) -> MockIO {
 		let default = field_definition.default;
-		prompt_with_default_and_save_to_existing_file(field_definition, default, value)
+		prompt_with_default(field_definition, default, value)
 	}
 
-	pub fn prompt_with_default_and_save_to_existing_file<T>(
+	pub fn prompt_with_default<T>(
 		field_definition: ConfigFieldDefinition<'_, T>,
 		default: Option<&str>,
 		value: &str,
 	) -> MockIO {
-		MockIO::Group(vec![
-			MockIO::file_read(field_definition.config_file),
-			MockIO::prompt(field_definition.name, default, value),
-			save_to_existing_file(field_definition, value),
-		])
+		MockIO::prompt(&format!("Enter the {}", field_definition.name), default, value)
 	}
 
-	pub fn prompt_multi_option_with_default_and_save_to_existing_file<T: SelectOptions>(
+	pub fn prompt_multi_option_with_default<T: SelectOptions>(
 		field_definition: ConfigFieldDefinition<'_, T>,
 		default: Option<&str>,
 		value: &str,
 	) -> MockIO {
-		MockIO::Group(vec![
-			MockIO::file_read(field_definition.config_file),
-			MockIO::prompt_multi_option(
-				field_definition.name,
-				T::select_options_with_default(default),
-				value,
-			),
-			save_to_existing_file(field_definition, value),
-		])
+		MockIO::prompt_multi_option(
+			&format!("Select {}", field_definition.name),
+			T::select_options_with_default(default),
+			value,
+		)
 	}
 }

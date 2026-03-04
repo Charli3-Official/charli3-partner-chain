@@ -2,21 +2,21 @@ use crate::config::*;
 
 mod config_field {
 
-	use crate::tests::{MockIO, MockIOContext};
+	use crate::{
+		tests::{CHAIN_CONFIG_FILE_PATH, MockIOContext, RESOURCES_CONFIG_FILE_PATH},
+		verify_json,
+	};
 
 	use super::*;
 
 	#[test]
 	fn saves_to_new_file() {
-		let config_file_path = "/path/to/test-config.json";
-
-		let config_field: ConfigFieldDefinition<String> = ConfigFieldDefinition {
-			name: "test config field",
-			config_file: config_file_path,
-			path: &["path", "to", "field"],
-			default: None,
-			_marker: Default::default(),
-		};
+		let config_field: ConfigFieldDefinition<String> = ConfigFieldDefinition::new(
+			"test config field",
+			ConfigFile::Chain,
+			&["path", "to", "field"],
+			None,
+		);
 
 		let expected_file_content = serde_json::json!({
 			"path": {
@@ -26,18 +26,14 @@ mod config_field {
 			}
 		});
 
-		let mock_context = MockIOContext::new().with_expected_io(vec![MockIO::file_write_json(
-			config_file_path,
-			expected_file_content,
-		)]);
+		let mock_context = MockIOContext::new();
 
 		config_field.save_to_file(&"this is a test string".into(), &mock_context);
+		verify_json!(mock_context, CHAIN_CONFIG_FILE_PATH, expected_file_content);
 	}
 
 	#[test]
 	fn saves_to_existing_file() {
-		let config_file_path = "/path/to/test-config.json";
-
 		let existing_content = serde_json::json!({
 			"some": {
 				"other": {
@@ -46,13 +42,12 @@ mod config_field {
 			}
 		});
 
-		let config_field: ConfigFieldDefinition<String> = ConfigFieldDefinition {
-			name: "test config field",
-			config_file: config_file_path,
-			path: &["path", "to", "field"],
-			default: None,
-			_marker: Default::default(),
-		};
+		let config_field: ConfigFieldDefinition<String> = ConfigFieldDefinition::new(
+			"test config field",
+			ConfigFile::Resources,
+			&["path", "to", "field"],
+			None,
+		);
 
 		let expected_file_content = serde_json::json!({
 			"path": {
@@ -67,20 +62,15 @@ mod config_field {
 			}
 		});
 
-		let mock_context = MockIOContext::new()
-			.with_json_file(config_file_path, existing_content)
-			.with_expected_io(vec![
-				MockIO::file_read(config_file_path),
-				MockIO::file_write_json(config_file_path, expected_file_content),
-			]);
+		let mock_context =
+			MockIOContext::new().with_json_file(RESOURCES_CONFIG_FILE_PATH, existing_content);
 
 		config_field.save_to_file(&"this is a test string".into(), &mock_context);
+		verify_json!(mock_context, RESOURCES_CONFIG_FILE_PATH, expected_file_content);
 	}
 
 	#[test]
 	fn loads_file() {
-		let config_file_path = "/path/to/test-config.json";
-
 		let json_content = serde_json::json!({
 			"path": {
 				"to": {
@@ -89,17 +79,15 @@ mod config_field {
 			}
 		});
 
-		let config_field: ConfigFieldDefinition<String> = ConfigFieldDefinition {
-			name: "test config field",
-			config_file: config_file_path,
-			path: &["path", "to", "field"],
-			default: None,
-			_marker: Default::default(),
-		};
+		let config_field: ConfigFieldDefinition<String> = ConfigFieldDefinition::new(
+			"test config field",
+			ConfigFile::Resources,
+			&["path", "to", "field"],
+			None,
+		);
 
-		let mock_context = MockIOContext::new()
-			.with_json_file(config_file_path, json_content.clone())
-			.with_expected_io(vec![MockIO::file_read(config_file_path)]);
+		let mock_context =
+			MockIOContext::new().with_json_file(RESOURCES_CONFIG_FILE_PATH, json_content.clone());
 
 		let read_content = config_field.load_file(&mock_context);
 
@@ -108,13 +96,12 @@ mod config_field {
 
 	#[test]
 	fn extracts_from_json() {
-		let config_field: ConfigFieldDefinition<String> = ConfigFieldDefinition {
-			name: "test config field",
-			config_file: "not used",
-			path: &["path", "to", "field"],
-			default: None,
-			_marker: Default::default(),
-		};
+		let config_field: ConfigFieldDefinition<String> = ConfigFieldDefinition::new(
+			"test config field",
+			ConfigFile::Chain,
+			&["path", "to", "field"],
+			None,
+		);
 
 		let json_object = serde_json::json!({
 			"path": {

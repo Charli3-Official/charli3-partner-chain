@@ -7,34 +7,48 @@ use std::fmt::Debug;
 use std::str::FromStr;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Default)]
+/// Represents the length of a slot in milliseconds.
 pub struct SlotLength {
+	/// The length of a slot in milliseconds.
 	pub milliseconds: u32,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+/// Represents the time in seconds.
 pub struct TimeSeconds {
+	/// The time in seconds.
 	pub seconds: u64,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Default)]
+/// Represents the size of a transaction in bytes.
 pub struct OgmiosBytesSize {
+	/// The size of a transaction in bytes.
 	pub bytes: u32,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
+/// Represents a UTXO.
 pub struct OgmiosUtxo {
+	/// The transaction hash.
 	pub transaction: OgmiosTx,
+	/// The index of the UTXO within the transaction.
 	pub index: u16,
-	// bech32 address
+	/// The Bech32 address of the UTXO.
 	pub address: String,
+	/// The value of the UTXO.
 	pub value: OgmiosValue,
+	/// The datum of the UTXO.
 	pub datum: Option<Datum>,
+	/// The hash of the datum of the UTXO.
 	pub datum_hash: Option<DatumHash>,
+	/// The reference script of the UTXO.
 	pub script: Option<OgmiosScript>,
 }
 
 impl OgmiosUtxo {
+	/// Returns the UTXO ID.
 	pub fn utxo_id(&self) -> UtxoId {
 		UtxoId::new(self.transaction.id, self.index)
 	}
@@ -46,9 +60,11 @@ impl core::fmt::Display for OgmiosUtxo {
 	}
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Deserialize, Eq, PartialEq)]
 #[serde(transparent)]
+/// Represents a datum.
 pub struct Datum {
+	/// The bytes of the datum.
 	#[serde(deserialize_with = "parse_bytes")]
 	pub bytes: Vec<u8>,
 }
@@ -59,9 +75,17 @@ impl From<Vec<u8>> for Datum {
 	}
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+impl std::fmt::Debug for Datum {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("Datum").field("bytes", &hex::encode(&self.bytes)).finish()
+	}
+}
+
+#[derive(Clone, Deserialize, Eq, PartialEq)]
 #[serde(transparent)]
+/// Represents a datum hash.
 pub struct DatumHash {
+	/// The bytes of the datum hash.
 	#[serde(deserialize_with = "parse_bytes_array")]
 	pub bytes: [u8; 32],
 }
@@ -72,39 +96,65 @@ impl From<[u8; 32]> for DatumHash {
 	}
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(untagged)]
-pub enum OgmiosScript {
-	Plutus(PlutusScript),
-	Native(NativeScript),
+impl std::fmt::Debug for DatumHash {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("DatumHash").field("bytes", &hex::encode(self.bytes)).finish()
+	}
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-pub struct PlutusScript {
+#[derive(Clone, Deserialize, Eq, PartialEq)]
+/// Represents a cardano script.
+pub struct OgmiosScript {
+	/// The language of the script.
 	pub language: String,
+	/// The CBOR representation of the script (in case of Plutus scripts).
 	#[serde(deserialize_with = "parse_bytes")]
 	pub cbor: Vec<u8>,
+	/// The JSON representation of the script (in case of Native scripts).
+	pub json: Option<NativeScript>,
+}
+
+impl std::fmt::Debug for OgmiosScript {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("PlutusScript")
+			.field("language", &self.language)
+			.field("cbor", &hex::encode(&self.cbor))
+			.field("json", &self.json)
+			.finish()
+	}
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(tag = "clause", rename_all = "lowercase")]
+/// Represents a cardano native script.
 pub enum NativeScript {
+	/// Represents a signature script.
 	Signature {
 		#[serde(deserialize_with = "parse_bytes_array")]
+		/// The public key hash of the signer.
 		from: [u8; 28],
 	},
+	/// Represents an all script.
 	All {
+		/// The scripts to check.
 		from: Vec<NativeScript>,
 	},
+	/// Represents an any script.
 	Any {
+		/// The scripts to check.
 		from: Vec<NativeScript>,
 	},
 	#[serde(rename_all = "camelCase")]
+	/// Represents a some script.
 	Some {
+		/// The scripts to check.
 		from: Vec<NativeScript>,
+		/// The minimum number of scripts that must be satisfied.
 		at_least: u32,
 	},
+	/// Represents a before script.
 	Before {
+		/// The slot number.
 		slot: u64,
 	},
 }
@@ -120,24 +170,32 @@ impl<'de> Deserialize<'de> for OgmiosValue {
 	}
 }
 
+/// Represents a script hash.
 type ScriptHash = [u8; 28];
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+/// Represents the value of a UTXO.
 pub struct OgmiosValue {
+	/// The amount of lovelace in the UTXO.
 	pub lovelace: u64,
+	/// The native tokens in the UTXO.
 	pub native_tokens: HashMap<ScriptHash, Vec<Asset>>,
 }
 
 impl OgmiosValue {
+	/// Creates a new UTXO value with only lovelace.
 	pub fn new_lovelace(lovelace: u64) -> Self {
 		Self { lovelace, native_tokens: HashMap::new() }
 	}
 }
 
+/// Represents an asset of an UTXO.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Asset {
+	/// The name of the asset.
 	pub name: Vec<u8>,
-	pub amount: i128,
+	/// The amount of the asset.
+	pub amount: u64,
 }
 
 impl TryFrom<serde_json::Value> for OgmiosValue {
@@ -164,8 +222,8 @@ impl TryFrom<serde_json::Value> for OgmiosValue {
 							.map_err(|_| "expected asset name to be hexstring");
 						let amount = amount
 							.as_number()
-							.and_then(|n| n.clone().as_i128())
-							.ok_or("expected amount to be i128");
+							.and_then(|n| n.clone().as_u64())
+							.ok_or("expected asset amount to be u64");
 						name.and_then(|name| amount.map(|amount| Asset { name, amount }))
 					})
 					.collect();
@@ -178,7 +236,9 @@ impl TryFrom<serde_json::Value> for OgmiosValue {
 }
 
 #[derive(Clone, Default, Deserialize, Eq, PartialEq)]
+/// Transaction identifier.
 pub struct OgmiosTx {
+	/// The transaction hash.
 	#[serde(deserialize_with = "parse_bytes_array")]
 	pub id: [u8; 32],
 }
@@ -240,7 +300,7 @@ where
 #[cfg(test)]
 mod tests {
 	use super::OgmiosUtxo;
-	use crate::types::{Asset, NativeScript, OgmiosScript, OgmiosTx, OgmiosValue, PlutusScript};
+	use crate::types::{Asset, NativeScript, OgmiosScript, OgmiosTx, OgmiosValue};
 	use hex_literal::hex;
 
 	#[test]
@@ -265,7 +325,6 @@ mod tests {
 				"": 18446744073709551615i128
 			},
 			"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
-				"cdef": -18446744073709551615i128,
 				"aaaa": 1,
 			}
 		});
@@ -277,17 +336,13 @@ mod tests {
 				.get(&hex!("e0d4479b3dbb53b1aecd48f7ef524a9cf166585923d91d9c72ed02cb"))
 				.unwrap()
 				.clone(),
-			vec![Asset { name: vec![], amount: 18446744073709551615i128 }]
+			vec![Asset { name: vec![], amount: 18446744073709551615u64 }]
 		);
 		let assets = value
 			.native_tokens
 			.get(&hex!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
 			.unwrap()
 			.clone();
-		assert_eq!(
-			assets.iter().find(|asset| asset.name == hex!("cdef").to_vec()).unwrap().amount,
-			-18446744073709551615i128
-		);
 		assert_eq!(
 			assets.iter().find(|asset| asset.name == hex!("aaaa").to_vec()).unwrap().amount,
 			1
@@ -351,10 +406,11 @@ mod tests {
 				value: OgmiosValue::new_lovelace(1356118),
 				datum: None,
 				datum_hash: None,
-				script: Some(OgmiosScript::Plutus(PlutusScript {
+				script: Some(OgmiosScript {
 					language: "plutus:v3".into(),
-					cbor: hex!("aabbccdd00112233").to_vec()
-				}))
+					cbor: hex!("aabbccdd00112233").to_vec(),
+					json: None,
+				})
 			}
 		)
 	}
@@ -366,7 +422,18 @@ mod tests {
 			"index": 1,
 			"address": "addr_test1vqezxrh24ts0775hulcg3ejcwj7hns8792vnn8met6z9gwsxt87zy",
 			"value": { "ada": {	"lovelace": 1356118 } },
-			"script": {"clause": "some", "atLeast": 1, "from":[{"clause": "signature","from": "a1a2a3a4a5a6a7a1a2a3a4a5a6a7a1a2a3a4a5a6a7a1a2a3a4a5a6a7"}, {"clause": "before", "slot": 100 }]}
+			"script": {
+				"language": "native",
+				"json": {
+					"clause": "some",
+					"atLeast": 1,
+					"from":[
+						{"clause": "signature","from": "a1a2a3a4a5a6a7a1a2a3a4a5a6a7a1a2a3a4a5a6a7a1a2a3a4a5a6a7"},
+						{"clause": "before", "slot": 100 }
+					]
+				},
+				"cbor": "830301818200581ce8c300330fe315531ca89d4a2e7d0c80211bc70b473b1ed4979dff2b"
+			}
 		});
 		let utxo: OgmiosUtxo = serde_json::from_value(value).unwrap();
 		assert_eq!(
@@ -381,15 +448,24 @@ mod tests {
 				value: OgmiosValue::new_lovelace(1356118),
 				datum: None,
 				datum_hash: None,
-				script: Some(OgmiosScript::Native(NativeScript::Some {
-					from: vec![
-						NativeScript::Signature {
-							from: hex!("a1a2a3a4a5a6a7a1a2a3a4a5a6a7a1a2a3a4a5a6a7a1a2a3a4a5a6a7")
-						},
-						NativeScript::Before { slot: 100 }
-					],
-					at_least: 1
-				}))
+				script: Some(OgmiosScript {
+					language: "native".into(),
+					json: Some(NativeScript::Some {
+						from: vec![
+							NativeScript::Signature {
+								from: hex!(
+									"a1a2a3a4a5a6a7a1a2a3a4a5a6a7a1a2a3a4a5a6a7a1a2a3a4a5a6a7"
+								)
+							},
+							NativeScript::Before { slot: 100 }
+						],
+						at_least: 1
+					}),
+					cbor: hex!(
+						"830301818200581ce8c300330fe315531ca89d4a2e7d0c80211bc70b473b1ed4979dff2b"
+					)
+					.to_vec()
+				})
 			}
 		)
 	}

@@ -1,26 +1,27 @@
+use crate::cmd_traits::*;
+use crate::config::{ConfigFile, ServiceConfig};
 use crate::io::IOContext;
 use crate::ogmios::{OgmiosRequest, OgmiosResponse};
 use anyhow::anyhow;
-use ogmios_client::types::OgmiosTx;
-use partner_chains_cardano_offchain::d_param::UpsertDParam;
-use partner_chains_cardano_offchain::init_governance::InitGovernance;
-use partner_chains_cardano_offchain::permissioned_candidates::UpsertPermissionedCandidates;
-use partner_chains_cardano_offchain::register::{Deregister, Register};
-use partner_chains_cardano_offchain::scripts_data::{GetScriptsData, ScriptsData};
-use partner_chains_cardano_offchain::OffchainError;
+use partner_chains_cardano_offchain::await_tx::FixedDelayRetries;
+use partner_chains_cardano_offchain::cardano_keys::CardanoPaymentSigningKey;
+use partner_chains_cardano_offchain::governance::MultiSigParameters;
+use partner_chains_cardano_offchain::multisig::MultiSigSmartContractResult;
+use partner_chains_cardano_offchain::scripts_data::ScriptsData;
 use pretty_assertions::assert_eq;
+use runtime::MockRuntime;
 use sidechain_domain::{
-	CandidateRegistration, DParameter, MainchainAddressHash, MainchainPrivateKey,
-	MainchainPublicKey, McTxHash, UtxoId,
+	CandidateRegistration, DParameter, McTxHash, PermissionedCandidateData, StakePoolPublicKey,
+	UtxoId,
 };
 use sp_core::offchain::Timestamp;
 use std::collections::HashMap;
-use std::panic::{catch_unwind, resume_unwind, UnwindSafe};
-use std::path::{Path, PathBuf};
+use std::panic::{UnwindSafe, catch_unwind, resume_unwind};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use tempfile::TempPath;
 
 mod config;
+pub(crate) mod runtime;
 
 #[derive(Debug)]
 #[allow(dead_code)]
@@ -31,11 +32,6 @@ pub enum MockIO {
 	Prompt { prompt: String, default: Option<String>, input: String },
 	PromptYN { prompt: String, default: bool, choice: bool },
 	PromptMultiOption { prompt: String, options: Vec<String>, choice: String },
-	FileRead { path: String },
-	FileWrite { path: String, input: String },
-	FileWriteJson { path: String, input: serde_json::Value },
-	FileWriteJsonField { path: String, key: String, value: String },
-	NewTmpFile { content: String },
 	NewTmpDir,
 	ListDirectory { path: String, result: Option<Vec<String>> },
 	DeleteFile { path: String },
@@ -86,30 +82,6 @@ impl MockIO {
 			input: input.into(),
 		}
 		.with_location()
-	}
-	#[track_caller]
-	pub fn file_read(path: &str) -> Self {
-		Self::FileRead { path: path.into() }.with_location()
-	}
-	#[track_caller]
-	pub fn file_write(path: &str, input: &str) -> Self {
-		Self::FileWrite { path: path.into(), input: input.into() }.with_location()
-	}
-
-	#[track_caller]
-	pub fn file_write_json_contains(path: &str, key: &str, value: &str) -> Self {
-		Self::FileWriteJsonField { path: path.into(), key: key.into(), value: value.into() }
-			.with_location()
-	}
-
-	#[track_caller]
-	pub fn file_write_json(path: &str, input: serde_json::Value) -> Self {
-		Self::FileWriteJson { path: path.into(), input }.with_location()
-	}
-
-	#[track_caller]
-	pub fn new_tmp_file(content: &str) -> Self {
-		Self::NewTmpFile { content: content.into() }.with_location()
 	}
 
 	#[track_caller]
@@ -183,6 +155,10 @@ pub struct MockIOContext {
 	pub offchain_mocks: OffchainMocks,
 }
 
+pub(crate) const CHAIN_CONFIG_FILE_PATH: &str = "test-pc-chain-config.json";
+
+pub(crate) const RESOURCES_CONFIG_FILE_PATH: &str = "test-pc-resources-config.json";
+
 impl MockIOContext {
 	pub fn new() -> Self {
 		Self {
@@ -191,6 +167,7 @@ impl MockIOContext {
 			offchain_mocks: Default::default(),
 		}
 	}
+
 	pub fn with_file(self, path: &str, content: &str) -> Self {
 		self.files.lock().unwrap().insert(path.into(), content.into());
 		self
@@ -230,7 +207,7 @@ impl MockIOContext {
 	}
 }
 
-// The only external dependnecy of Offchain is Ogmios. This key is Ogmios address.
+// The only external dependency of Offchain is Ogmios. This key is Ogmios address.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct OffchainMockKey {
 	ogmios_addr: String,
@@ -255,25 +232,27 @@ impl OffchainMocks {
 
 #[derive(Default, Clone)]
 pub struct OffchainMock {
-	pub scripts_data: HashMap<UtxoId, Result<ScriptsData, OffchainError>>,
-	pub init_governance: HashMap<
-		(UtxoId, MainchainAddressHash, MainchainPrivateKey),
-		Result<OgmiosTx, OffchainError>,
+	pub scripts_data: HashMap<UtxoId, Result<ScriptsData, String>>,
+	pub init_governance:
+		HashMap<(UtxoId, MultiSigParameters, PrivateKeyBytes), Result<McTxHash, String>>,
+	pub get_d_param: HashMap<UtxoId, Result<Option<DParameter>, String>>,
+	pub upsert_d_param: HashMap<
+		(UtxoId, DParameter, PrivateKeyBytes),
+		Result<Option<MultiSigSmartContractResult>, String>,
 	>,
-	pub upsert_d_param: HashMap<(UtxoId, DParameter, [u8; 32]), Result<Option<McTxHash>, String>>,
+	pub get_permissioned_candidates:
+		HashMap<UtxoId, Result<Option<Vec<sidechain_domain::PermissionedCandidateData>>, String>>,
 	pub upsert_permissioned_candidates: HashMap<
-		(UtxoId, Vec<sidechain_domain::PermissionedCandidateData>, [u8; 32]),
-		Result<Option<McTxHash>, String>,
+		(UtxoId, Vec<sidechain_domain::PermissionedCandidateData>, PrivateKeyBytes),
+		Result<Option<MultiSigSmartContractResult>, String>,
 	>,
-	pub register: HashMap<
-		(UtxoId, CandidateRegistration, MainchainPrivateKey),
-		Result<Option<McTxHash>, OffchainError>,
-	>,
-	pub deregister: HashMap<
-		(UtxoId, MainchainPrivateKey, MainchainPublicKey),
-		Result<Option<McTxHash>, OffchainError>,
-	>,
+	pub register:
+		HashMap<(UtxoId, CandidateRegistration, PrivateKeyBytes), Result<Option<McTxHash>, String>>,
+	pub deregister:
+		HashMap<(UtxoId, PrivateKeyBytes, StakePoolPublicKey), Result<Option<McTxHash>, String>>,
 }
+
+type PrivateKeyBytes = Vec<u8>;
 
 impl OffchainMock {
 	pub fn new() -> Self {
@@ -283,7 +262,7 @@ impl OffchainMock {
 	pub(crate) fn with_scripts_data(
 		self,
 		genesis_utxo: UtxoId,
-		scripts_data: Result<ScriptsData, OffchainError>,
+		scripts_data: Result<ScriptsData, String>,
 	) -> Self {
 		Self { scripts_data: vec![(genesis_utxo, scripts_data)].into_iter().collect(), ..self }
 	}
@@ -291,9 +270,9 @@ impl OffchainMock {
 	pub(crate) fn with_init_governance(
 		self,
 		genesis_utxo: UtxoId,
-		governance: MainchainAddressHash,
-		payment_key: MainchainPrivateKey,
-		result: Result<OgmiosTx, OffchainError>,
+		governance: MultiSigParameters,
+		payment_key: PrivateKeyBytes,
+		result: Result<McTxHash, String>,
 	) -> Self {
 		Self {
 			init_governance: vec![((genesis_utxo, governance, payment_key), result)]
@@ -303,22 +282,30 @@ impl OffchainMock {
 		}
 	}
 
+	pub(crate) fn with_get_d_param(
+		self,
+		genesis_utxo: UtxoId,
+		result: Result<Option<DParameter>, String>,
+	) -> Self {
+		Self { get_d_param: [(genesis_utxo, result)].into(), ..self }
+	}
+
 	pub(crate) fn with_upsert_d_param(
 		self,
 		genesis_utxo: UtxoId,
 		d_param: DParameter,
-		payment_key: MainchainPrivateKey,
-		result: Result<Option<McTxHash>, String>,
+		payment_key: PrivateKeyBytes,
+		result: Result<Option<MultiSigSmartContractResult>, String>,
 	) -> Self {
-		Self { upsert_d_param: [((genesis_utxo, d_param, payment_key.0), result)].into(), ..self }
+		Self { upsert_d_param: [((genesis_utxo, d_param, payment_key), result)].into(), ..self }
 	}
 
 	pub(crate) fn with_register(
 		self,
 		genesis_utxo: UtxoId,
 		candidate_registration: CandidateRegistration,
-		payment_key: MainchainPrivateKey,
-		result: Result<Option<McTxHash>, OffchainError>,
+		payment_key: PrivateKeyBytes,
+		result: Result<Option<McTxHash>, String>,
 	) -> Self {
 		Self {
 			register: [((genesis_utxo, candidate_registration, payment_key), result)].into(),
@@ -329,9 +316,9 @@ impl OffchainMock {
 	pub(crate) fn with_deregister(
 		self,
 		genesis_utxo: UtxoId,
-		payment_signing_key: MainchainPrivateKey,
-		stake_ownership_pub_key: MainchainPublicKey,
-		result: Result<Option<McTxHash>, OffchainError>,
+		payment_signing_key: PrivateKeyBytes,
+		stake_ownership_pub_key: StakePoolPublicKey,
+		result: Result<Option<McTxHash>, String>,
 	) -> Self {
 		Self {
 			deregister: [((genesis_utxo, payment_signing_key, stake_ownership_pub_key), result)]
@@ -340,16 +327,24 @@ impl OffchainMock {
 		}
 	}
 
+	pub(crate) fn with_get_permissioned_candidates(
+		self,
+		genesis_utxo: UtxoId,
+		result: Result<Option<Vec<PermissionedCandidateData>>, String>,
+	) -> Self {
+		Self { get_permissioned_candidates: [(genesis_utxo, result)].into(), ..self }
+	}
+
 	pub(crate) fn with_upsert_permissioned_candidates(
 		self,
 		genesis_utxo: UtxoId,
 		candidates: &[sidechain_domain::PermissionedCandidateData],
-		payment_key: MainchainPrivateKey,
-		result: Result<Option<McTxHash>, String>,
+		payment_key: PrivateKeyBytes,
+		result: Result<Option<MultiSigSmartContractResult>, String>,
 	) -> Self {
 		Self {
 			upsert_permissioned_candidates: [(
-				(genesis_utxo, candidates.to_vec(), payment_key.0),
+				(genesis_utxo, candidates.to_vec(), payment_key),
 				result,
 			)]
 			.into(),
@@ -359,41 +354,55 @@ impl OffchainMock {
 }
 
 impl GetScriptsData for OffchainMock {
-	async fn get_scripts_data(&self, genesis_utxo: UtxoId) -> Result<ScriptsData, OffchainError> {
-		self.scripts_data.get(&genesis_utxo).cloned().unwrap_or_else(|| {
-			Err(OffchainError::InternalError("No mock for shelley_genesis_configuration".into()))
-		})
+	async fn get_scripts_data(&self, genesis_utxo: UtxoId) -> Result<ScriptsData, String> {
+		self.scripts_data
+			.get(&genesis_utxo)
+			.cloned()
+			.unwrap_or_else(|| Err("No mock for shelley_genesis_configuration".into()))
 	}
 }
 
 impl InitGovernance for OffchainMock {
 	async fn init_governance(
 		&self,
-		governance_authority: MainchainAddressHash,
-		payment_key: MainchainPrivateKey,
+		_retries: FixedDelayRetries,
+		governance_authority: &MultiSigParameters,
+		payment_key: &CardanoPaymentSigningKey,
 		genesis_utxo_id: UtxoId,
-	) -> Result<OgmiosTx, OffchainError> {
+	) -> Result<McTxHash, String> {
 		self.init_governance
-			.get(&(genesis_utxo_id, governance_authority, payment_key))
+			.get(&(genesis_utxo_id, governance_authority.clone(), payment_key.to_bytes()))
 			.cloned()
-			.unwrap_or_else(|| {
-				Err(OffchainError::InternalError("No mock for init_governance".into()))
-			})
+			.unwrap_or_else(|| Err("No mock for init_governance".into()))
+	}
+}
+
+impl GetDParam for OffchainMock {
+	async fn get_d_param(&self, genesis_utxo: UtxoId) -> anyhow::Result<Option<DParameter>> {
+		self.get_d_param
+			.get(&genesis_utxo)
+			.cloned()
+			.unwrap_or_else(|| Err(format!("No mock for get_d_param({genesis_utxo:?})")))
+			.map_err(|err| anyhow!("{err}"))
 	}
 }
 
 impl UpsertDParam for OffchainMock {
 	async fn upsert_d_param(
 		&self,
+		_retries: FixedDelayRetries,
 		genesis_utxo: UtxoId,
 		d_parameter: &DParameter,
-		payment_signing_key: [u8; 32],
-	) -> anyhow::Result<Option<McTxHash>> {
+		payment_signing_key: &CardanoPaymentSigningKey,
+	) -> anyhow::Result<Option<MultiSigSmartContractResult>> {
 		self.upsert_d_param
-			.get(&(genesis_utxo, d_parameter.clone(), payment_signing_key))
+			.get(&(genesis_utxo, d_parameter.clone(), payment_signing_key.to_bytes()))
 			.cloned()
 			.unwrap_or_else(|| {
-				Err(format!("No mock for upsert_d_param({genesis_utxo}, {d_parameter:?}, {payment_signing_key:?})"))
+				Err(format!(
+					"No mock for upsert_d_param({genesis_utxo}, {d_parameter:?}, {:?})",
+					hex::encode(payment_signing_key.to_bytes())
+				))
 			})
 			.map_err(|err| anyhow!("{err}"))
 	}
@@ -402,15 +411,19 @@ impl UpsertDParam for OffchainMock {
 impl Register for OffchainMock {
 	async fn register(
 		&self,
+		_retries: FixedDelayRetries,
 		genesis_utxo: UtxoId,
 		candidate_registration: &CandidateRegistration,
-		payment_signing_key: MainchainPrivateKey,
-	) -> Result<Option<McTxHash>, OffchainError> {
+		payment_signing_key: &CardanoPaymentSigningKey,
+	) -> Result<Option<McTxHash>, String> {
 		self.register
-			.get(&(genesis_utxo, candidate_registration.clone(), payment_signing_key.clone()))
+			.get(&(genesis_utxo, candidate_registration.clone(), payment_signing_key.to_bytes()))
 			.cloned()
 			.unwrap_or_else(|| {
-				Err(OffchainError::InternalError(format!("No mock for register({genesis_utxo}, {candidate_registration:?}, {payment_signing_key:?})")))
+				Err(format!(
+					"No mock for register({genesis_utxo}, {candidate_registration:?}, {:?})",
+					hex::encode(payment_signing_key.to_bytes())
+				))
 			})
 	}
 }
@@ -418,31 +431,51 @@ impl Register for OffchainMock {
 impl Deregister for OffchainMock {
 	async fn deregister(
 		&self,
+		_retries: FixedDelayRetries,
 		genesis_utxo: UtxoId,
-		payment_signing_key: MainchainPrivateKey,
-		stake_ownership_pub_key: MainchainPublicKey,
-	) -> Result<Option<McTxHash>, OffchainError> {
+		payment_signing_key: &CardanoPaymentSigningKey,
+		stake_ownership_pub_key: StakePoolPublicKey,
+	) -> Result<Option<McTxHash>, String> {
 		self.deregister
-			.get(&(genesis_utxo, payment_signing_key.clone(), stake_ownership_pub_key.clone()))
+			.get(&(genesis_utxo, payment_signing_key.to_bytes(), stake_ownership_pub_key.clone()))
 			.cloned()
 			.unwrap_or_else(|| {
-				Err(OffchainError::InternalError(format!("No mock for deregister({genesis_utxo}, {payment_signing_key:?}, {stake_ownership_pub_key:?})")))
+				Err(format!(
+					"No mock for deregister({genesis_utxo}, {:?}, {stake_ownership_pub_key:?})",
+					hex::encode(payment_signing_key.to_bytes())
+				))
 			})
+	}
+}
+
+impl GetPermissionedCandidates for OffchainMock {
+	async fn get_permissioned_candidates(
+		&self,
+		genesis_utxo: UtxoId,
+	) -> anyhow::Result<Option<Vec<sidechain_domain::PermissionedCandidateData>>> {
+		self.get_permissioned_candidates
+			.get(&genesis_utxo)
+			.cloned()
+			.unwrap_or_else(|| {
+				Err(format!("No mock for get_permissioned_candidates({genesis_utxo:?})"))
+			})
+			.map_err(|err| anyhow!("{err}"))
 	}
 }
 
 impl UpsertPermissionedCandidates for OffchainMock {
 	async fn upsert_permissioned_candidates(
 		&self,
+		_retries: FixedDelayRetries,
 		genesis_utxo: UtxoId,
 		candidates: &[sidechain_domain::PermissionedCandidateData],
-		payment_signing_key: [u8; 32],
-	) -> anyhow::Result<Option<McTxHash>> {
+		payment_signing_key: &CardanoPaymentSigningKey,
+	) -> anyhow::Result<Option<MultiSigSmartContractResult>> {
 		self.upsert_permissioned_candidates
-			.get(&(genesis_utxo, candidates.to_vec(), payment_signing_key))
+			.get(&(genesis_utxo, candidates.to_vec(), payment_signing_key.to_bytes()))
 			.cloned()
 			.unwrap_or_else(|| {
-				Err(format!("No mock for upsert_permissioned_candidates({genesis_utxo:?}, {candidates:?}, {payment_signing_key:?})\n defined mocks:{:?}", self.upsert_permissioned_candidates))
+				Err(format!("No mock for upsert_permissioned_candidates({genesis_utxo:?}, {candidates:?}, {:?})\n defined mocks:{:?}", hex::encode(payment_signing_key.to_bytes()),self.upsert_permissioned_candidates))
 			})
 			.map_err(|err| anyhow!("{err}"))
 	}
@@ -475,6 +508,10 @@ impl IOContext for MockIOContext {
 			},
 			other => panic!("Unexpected command executed: {cmd}, expected: {other:?}"),
 		})
+	}
+
+	fn current_executable(&self) -> anyhow::Result<String> {
+		Ok("<mock executable>".to_owned())
 	}
 
 	fn eprint(&self, msg: &str) {
@@ -519,72 +556,11 @@ impl IOContext for MockIOContext {
 	}
 
 	fn write_file(&self, path: &str, input: &str) {
-		let next = self.pop_next_action(&format!("write_file(path = {path}, input = {input})"));
-		next.print_mock_location_on_panic(|next| match next {
-			MockIO::FileWriteJsonField {
-				path: expected_path,
-				key: expected_key,
-				value: expected_value,
-			} => {
-				assert_eq!(
-					path, expected_path,
-					"Unexpected file write: {path}, expected: {expected_path}"
-				);
-				let parsed_input: serde_json::Value =
-					serde_json::from_str(input).expect("Invalid json write attempt to {path}");
-				let value_opt = parsed_input.pointer(&expected_key);
-				let value = value_opt.unwrap_or_else(|| {
-					panic!("Unexpected write input. Expected key {expected_key} not found in json {parsed_input}")
-				});
-
-				assert_eq!(
-					expected_value,
-					value.to_string().replace('"', ""),
-					"Unexpected write input: {value}, expected: {expected_value}"
-				);
-				self.files.lock().unwrap().insert(path.into(), input.into());
-			},
-			MockIO::FileWriteJson { path: expected_path, input: expected_input } => {
-				assert_eq!(
-					path, expected_path,
-					"Unexpected file write: {path}, expected: {expected_path}"
-				);
-				let parsed_input: serde_json::Value =
-					serde_json::from_str(input).expect("Invalid json write attempt to {path}");
-				assert_eq!(
-					parsed_input, expected_input,
-					"Unexpected write input: {parsed_input}, expected: {expected_input}"
-				);
-				self.files.lock().unwrap().insert(path.into(), input.into());
-			},
-			MockIO::FileWrite { path: expected_path, input: expected_input } => {
-				assert_eq!(
-					path, expected_path,
-					"Unexpected file write: {path}, expected: {expected_path}"
-				);
-				assert_eq!(
-					input, &expected_input,
-					"Unexpected file write input: {input}, expected: {expected_input}"
-				);
-				self.files.lock().unwrap().insert(path.into(), input.into());
-			},
-			other => panic!("Unexpected file write action, expected: {other:?}"),
-		})
+		self.files.lock().unwrap().insert(path.into(), input.into());
 	}
 
 	fn read_file(&self, path: &str) -> Option<String> {
-		let next = self.pop_next_action(&format!("read_file({path})"));
-		let content = self.files.lock().unwrap().get::<String>(&path.to_string()).cloned();
-		next.print_mock_location_on_panic(|next| match next {
-			MockIO::FileRead { path: expected_path } => {
-				assert_eq!(
-					path, expected_path,
-					"File read for incorrect file {path}, expected: {expected_path}"
-				);
-				content.clone()
-			},
-			other => panic!("Unexpected file read for {path}, expected: {other:?}"),
-		})
+		self.files.lock().unwrap().get::<String>(&path.to_string()).cloned()
 	}
 
 	fn file_exists(&self, path: &str) -> bool {
@@ -668,21 +644,6 @@ impl IOContext for MockIOContext {
 			other => panic!("Unexpected system time request, expected: {other:?}"),
 		})
 	}
-	fn new_tmp_file(&self, content: &str) -> TempPath {
-		let next = self.pop_next_action(&format!("new_tmp_file(content = {content})"));
-		next.print_mock_location_on_panic(|next| match next {
-			MockIO::NewTmpFile { content: expected_content } => {
-				assert_eq!(
-					content, expected_content,
-					"Unexpected file write: {content}, expected content: {expected_content}"
-				);
-				let path = format!("/tmp/dummy{}", self.files.lock().unwrap().len());
-				self.files.lock().unwrap().insert(path.clone(), content.into());
-				TempPath::from_path(Path::new(&path))
-			},
-			other => panic!("Unexpected new tmp file action, expected: {other:?}"),
-		})
-	}
 
 	fn new_tmp_dir(&self) -> PathBuf {
 		let next = self.pop_next_action("new_tmp_dir()");
@@ -696,9 +657,10 @@ impl IOContext for MockIOContext {
 
 	fn ogmios_rpc(
 		&self,
-		addr: &str,
+		config: &ServiceConfig,
 		req: crate::ogmios::OgmiosRequest,
 	) -> anyhow::Result<crate::ogmios::OgmiosResponse> {
+		let addr = config.url();
 		let next = self.pop_next_action(&format!("ogmios_rpc(addr = {addr}, req = {req:?})"));
 		next.print_mock_location_on_panic(|next| match next {
 			MockIO::OgmiosRPC { addr: expected_addr, req: expected_req, res } => {
@@ -714,16 +676,46 @@ impl IOContext for MockIOContext {
 		&self,
 		ogmios_config: &crate::config::ServiceConfig,
 	) -> anyhow::Result<Self::Offchain> {
-		let addr: &str = &ogmios_config.to_string();
+		let addr: &str = &ogmios_config.url();
 		let mock = self.offchain_mocks.mocks.get(&addr.into()).ok_or_else(|| {
 			anyhow::anyhow!("No mock for Offchain implementation for {:?}", ogmios_config)
 		})?;
 		Ok(mock.clone())
 	}
+
+	fn config_file_path(&self, file: ConfigFile) -> String {
+		match file {
+			ConfigFile::Chain => CHAIN_CONFIG_FILE_PATH.to_owned(),
+			ConfigFile::Resources => RESOURCES_CONFIG_FILE_PATH.to_owned(),
+		}
+	}
+}
+
+#[macro_export]
+/// Macro for verifying that an output JSON file matches an expected value.
+///
+/// Arguments:
+///  - `ctx` context of a type implementing [IOContext]
+///  - `path` path to actual JSON file
+///  - `expected` expected JSON value
+macro_rules! verify_json {
+	($ctx:ident, $path:expr, $expected:expr) => {{
+		let actual = $ctx
+			.files
+			.lock()
+			.unwrap()
+			.get($path)
+			.map(|s| {
+				serde_json::from_str::<serde_json::Value>(s)
+					.unwrap_or_else(|_| panic!("{} is not valid JSON", $path))
+			})
+			.unwrap_or_else(|| panic!("Expected file {} not found", $path));
+		pretty_assertions::assert_eq!(actual, $expected, "File {} does not match expected", $path);
+	}};
 }
 
 #[test]
 fn verify_cli() {
 	use clap::CommandFactory;
-	crate::Command::command().debug_assert()
+	crate::Command::<MockRuntime>::command().debug_assert()
 }
