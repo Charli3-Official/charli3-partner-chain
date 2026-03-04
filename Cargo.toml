@@ -225,4 +225,4 @@ pallet-session-runtime-stub = { path = "toolkit/pallets/pallet-session-runtime-s
 partner-chains-cardano-offchain = { path = "toolkit/offchain", default-features = false }
 partner-chains-plutus-data = { path = "toolkit/primitives/plutus-data", default-features = false }
 partner-chains-smart-contracts-commands = { path = "toolkit/cli/smart-contracts-commands", default-features = false }
-charli3-oracle-core = { git = "https://github.com/Charli3-Official/charli3-substrate-oracle-core.git", branch = "main", default-features = false, features = ["pallet"] }
+charli3-oracle-core = { git = "https://github.com/Charli3-Official/charli3-substrate-oracle-core.git", branch = "feature/reward-payment", default-features = false, features = ["pallet"] }

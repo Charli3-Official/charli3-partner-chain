@@ -1,10 +1,14 @@
 use crate::chain_spec::*;
+use charli3_oracle_core::types::config::node::{ChannelId, MessagesConfiguration, TradePair};
 use sc_service::ChainType;
 use sidechain_runtime::{
 	AccountId, AuraConfig, BalancesConfig, GrandpaConfig, NativeTokenManagementConfig,
 	OracleConfig, RuntimeGenesisConfig, SessionCommitteeManagementConfig, SessionConfig,
 	SidechainConfig, SudoConfig, SystemConfig,
 };
+
+use sp_core::ConstU32;
+use sp_runtime::BoundedVec;
 use std::str::FromStr;
 
 /// Produces template chain spec for Partner Chains.
@@ -14,12 +18,52 @@ use std::str::FromStr;
 pub fn chain_spec() -> Result<ChainSpec, envy::Error> {
 	// complete here with the corresponding keys
 	let endowed_accounts: Vec<AccountId> = [
-		AccountId::from_str("0xd43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d")
+		AccountId::from_str("0x3ef249689a1f0479ebf5ff2ee2048028fb9af078e6066d9baa106133dc0f5421")
 			.unwrap(),
-		AccountId::from_str("0xac1d6fb8dd38138a2167493fecb2b5d49bb8a087a9956a53e0357eedb857f658")
+		AccountId::from_str("0xe1480dc86820ab64a4ee2ab3eb212fd30f40afe05e4ef52fdfffc4d9d557f06f")
+			.unwrap(),
+		AccountId::from_str("0xafd864fc5bd15c7acc6ff76836de5232ca7e6b1e5a772a50d0aedb8cff9298b2")
+			.unwrap(),
+		AccountId::from_str("0x6c0f4f7880ef5be388f45f9caad909f0fb1cfd3562c7c4ca1461d25e012d4878")
 			.unwrap(),
 	]
 	.to_vec();
+
+	let oracle_authorized_nodes = vec![
+		AccountId::from_str("0x6c0f4f7880ef5be388f45f9caad909f0fb1cfd3562c7c4ca1461d25e012d4878")
+			.unwrap(),
+		AccountId::from_str("0xe1480dc86820ab64a4ee2ab3eb212fd30f40afe05e4ef52fdfffc4d9d557f06f")
+			.unwrap(),
+	]
+	.try_into()
+	.expect("Authorized node exceed limit");
+
+	let oracle_trade_pairs = BoundedVec::try_from(vec![
+		TradePair::from_ticker("ADA-USD"),
+		TradePair::from_ticker("STUFF-USD"),
+		TradePair::from_ticker("WMT-USD"),
+		TradePair::from_ticker("USDM-ADA"),
+		TradePair::from_ticker("STRIKE-ADA"),
+	])
+	.expect("Oracle trade pairs within limit");
+	let channel_id = |hex_str: &str| -> ChannelId {
+		let bytes = hex::decode(hex_str).expect("Invalid hex string");
+		ChannelId::try_from(bytes).expect("Channel id within limit")
+	};
+	let oracle_channel_mappings: MessagesConfiguration = MessagesConfiguration::try_from(vec![
+		(
+			channel_id("d83063f2c65eed65f307d7cd39798334633ceb5bbd29ef9b84f946e9"),
+			BoundedVec::<u16, ConstU32<64>>::try_from(vec![0u16, 1u16, 2u16, 3u16, 4u16])
+				.expect("Trade pair indexes within limit"),
+		),
+		(
+			channel_id("56bd86ffdff6793f876cde8239dd3e7f3aeae333ee454d0a79ace928"),
+			BoundedVec::<u16, ConstU32<64>>::try_from(vec![0u16])
+				.expect("Trade pair indexes within limit"),
+		),
+	])
+	.expect("Channel mappings within limit");
+
 	let runtime_genesis_config = RuntimeGenesisConfig {
 		system: SystemConfig { ..Default::default() },
 		balances: BalancesConfig {
@@ -33,7 +77,7 @@ pub fn chain_spec() -> Result<ChainSpec, envy::Error> {
 			// No sudo account by default, please update with your preferences.
 			key: Some(
 				AccountId::from_str(
-					"0xb13b1465adee39623aa3f493f9d2c0c6c9a01f7723cf081488e01ff8da617318",
+					"0xead402cbe090c77646376fcefe0bdb56087a5860bbc430aa1b4079fed50d199d",
 				)
 				.unwrap(),
 			),
@@ -59,9 +103,17 @@ pub fn chain_spec() -> Result<ChainSpec, envy::Error> {
 		},
 		oracle: OracleConfig {
 			min_nodes_for_trusted_aggregation: 1,
+			authorized_nodes: oracle_authorized_nodes,
 			feed_age: 15,
 			outliers_range: 2,
 			divergency: 15,
+			trade_pairs: oracle_trade_pairs,
+			reward_policy_id: Some(channel_id(
+				"d83063f2c65eed65f307d7cd39798334633ceb5bbd29ef9b84f946e9",
+			)),
+			reward_asset_name: Some(
+				BoundedVec::try_from(b"Charli3".to_vec()).expect("Asset name within limit"),
+			),
 			..Default::default()
 		},
 	};

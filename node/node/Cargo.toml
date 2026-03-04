@@ -89,6 +89,8 @@ frame-benchmarking = { workspace = true }
 frame-benchmarking-cli = { workspace = true }
 
 # Local Dependencies
+charli3-oracle-core = { workspace = true }
+hex = { workspace = true }
 sidechain-runtime = { workspace = true }
 sidechain-mc-hash = { workspace = true, features = ["mock"] }
 sp-native-token-management = { workspace = true }
