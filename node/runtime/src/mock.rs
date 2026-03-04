@@ -1,26 +1,27 @@
-use authority_selection_inherents::ariadne_inherent_data_provider::AriadneInherentDataProvider;
-use authority_selection_inherents::authority_selection_inputs::AuthoritySelectionInputs;
-use authority_selection_inherents::filter_invalid_candidates::{
-	filter_trustless_candidates_registrations, RegisterValidatorSignedMessage,
+use authority_selection_inherents::{
+	AriadneInherentDataProvider, AuthoritySelectionInputs, MaybeFromCandidateKeys,
+	RegisterValidatorSignedMessage, filter_trustless_candidates_registrations,
 };
 use frame_support::{
+	Hashable,
 	pallet_prelude::*,
 	parameter_types,
 	traits::{ConstBool, ConstU64},
-	Hashable,
 };
+use frame_system::EnsureRoot;
 use hex_literal::hex;
 use plutus::ToDatum;
 use sidechain_domain::*;
-use sp_consensus_aura::ed25519::AuthorityId as AuraId;
+use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_consensus_grandpa::AuthorityId as GrandpaId;
 use sp_core::crypto::CryptoType;
-use sp_core::ed25519;
-use sp_core::{crypto::AccountId32, ed25519, ByteArray, ConstU128, Pair, H256};
+use sp_core::sr25519;
+use sp_core::{ByteArray, ConstU128, H256, Pair, crypto::AccountId32, ed25519};
+use sp_runtime::KeyTypeId;
+use sp_runtime::key_types::{AURA, GRANDPA};
 use sp_runtime::{
-	impl_opaque_keys,
+	BuildStorage, Digest, DigestItem, MultiSigner, impl_opaque_keys,
 	traits::{BlakeTwo256, IdentifyAccount, IdentityLookup, OpaqueKeys},
-	BuildStorage, Digest, DigestItem, MultiSigner,
 };
 use sp_std::vec::Vec;
 use std::cmp::max;
@@ -71,6 +72,7 @@ impl frame_system::Config for Test {
 	type OnNewAccount = ();
 	type OnKilledAccount = ();
 	type SystemWeightInfo = ();
+	type ExtensionsWeightInfo = ();
 	type SS58Prefix = SS58Prefix;
 	type OnSetCode = ();
 	type MaxConsumers = ConstU32<16>;
@@ -98,8 +100,9 @@ impl pallet_balances::Config for Test {
 	type WeightInfo = pallet_balances::weights::SubstrateWeight<Test>;
 	type FreezeIdentifier = ();
 	type MaxFreezes = ();
-	type RuntimeHoldReason = ();
+	type RuntimeHoldReason = RuntimeHoldReason;
 	type RuntimeFreezeReason = RuntimeFreezeReason;
+	type DoneSlashHandler = ();
 }
 
 use sp_consensus_aura::AURA_ENGINE_ID;
@@ -113,24 +116,41 @@ impl_opaque_keys! {
 		pub grandpa: Grandpa,
 	}
 }
-impl From<(ed25519::Public, ed25519::Public)> for TestSessionKeys {
-	fn from((aura, grandpa): (ed25519::Public, ed25519::Public)) -> Self {
+
+impl MaybeFromCandidateKeys for TestSessionKeys {}
+
+impl From<(sr25519::Public, ed25519::Public)> for TestSessionKeys {
+	fn from((aura, grandpa): (sr25519::Public, ed25519::Public)) -> Self {
 		let aura = AuraId::from(aura);
 		let grandpa = GrandpaId::from(grandpa);
 		Self { aura, grandpa }
 	}
 }
 
-pallet_session_runtime_stub::impl_pallet_session_config!(Test);
+impl TryFrom<CandidateKeys> for TestSessionKeys {
+	type Error = KeyTypeId;
+	fn try_from(value: CandidateKeys) -> Result<Self, Self::Error> {
+		let aura = <[u8; 32]>::try_from(value.find_or_empty(AURA))
+			.map_err(|_| AURA)
+			.map(|bytes| AuraId::from(sr25519::Public::from(bytes)))?;
+		let grandpa = <[u8; 32]>::try_from(value.find_or_empty(GRANDPA))
+			.map_err(|_| GRANDPA)
+			.map(|bytes| GrandpaId::from(ed25519::Public::from(bytes)))?;
+		Ok(Self { aura, grandpa })
+	}
+}
+
+pallet_partner_chains_session::impl_pallet_session_config!(Test);
 
 impl pallet_partner_chains_session::Config for Test {
-	type RuntimeEvent = RuntimeEvent;
 	type ValidatorId = <Self as frame_system::Config>::AccountId;
 	type ShouldEndSession = ValidatorManagementSessionManager<Test>;
 	type NextSessionRotation = ();
 	type SessionManager = ValidatorManagementSessionManager<Test>;
 	type SessionHandler = <TestSessionKeys as OpaqueKeys>::KeyTypeIdProviders;
 	type Keys = TestSessionKeys;
+	type Currency = Balances;
+	type KeyDeposit = ();
 }
 
 impl pallet_sidechain::Config for Test {
@@ -141,30 +161,27 @@ impl pallet_sidechain::Config for Test {
 }
 
 impl pallet_session_validator_management::Config for Test {
-	type RuntimeEvent = RuntimeEvent;
 	type MaxValidators = ConstU32<32>;
 	type AuthorityId = CrossChainPublic;
 	type AuthorityKeys = TestSessionKeys;
 	type AuthoritySelectionInputs = AuthoritySelectionInputs;
 	type ScEpochNumber = ScEpochNumber;
+	type CommitteeMember = (Self::AuthorityId, Self::AuthorityKeys);
+	type MainChainScriptsOrigin = EnsureRoot<Self::AccountId>;
 
 	/// Mock simply selects all valid registered candidates as validators.
 	fn select_authorities(
 		input: AuthoritySelectionInputs,
 		_sidechain_epoch: ScEpochNumber,
 	) -> Option<BoundedVec<(Self::AuthorityId, Self::AuthorityKeys), Self::MaxValidators>> {
-		let candidates: Vec<_> = filter_trustless_candidates_registrations(
-			input.registered_candidates,
-			Sidechain::genesis_utxo(),
-		)
+		let candidates: Vec<_> = filter_trustless_candidates_registrations::<
+			Self::AuthorityId,
+			Self::AuthorityKeys,
+		>(input.registered_candidates, Sidechain::genesis_utxo())
 		.into_iter()
-		.map(|c| (c.candidate.account_id, c.candidate.account_keys))
+		.map(|(c, _)| (c.account_id().clone(), c.account_keys().clone()))
 		.collect();
-		if candidates.is_empty() {
-			None
-		} else {
-			Some(BoundedVec::truncate_from(candidates))
-		}
+		if candidates.is_empty() { None } else { Some(BoundedVec::truncate_from(candidates)) }
 	}
 
 	fn current_epoch_number() -> ScEpochNumber {
@@ -172,6 +189,9 @@ impl pallet_session_validator_management::Config for Test {
 	}
 
 	type WeightInfo = ();
+
+	#[cfg(feature = "runtime-benchmarks")]
+	type BenchmarkHelper = ();
 }
 
 impl pallet_timestamp::Config for Test {
@@ -335,20 +355,19 @@ pub fn create_inherent_data_struct(
 				sidechain_signature: SidechainSignature(
 					sidechain_signature.into_inner().0[..64].to_vec(),
 				),
-				mainchain_signature: MainchainSignature(mainchain_signature.0.to_vec()),
+				mainchain_signature: MainchainSignature(mainchain_signature.0),
 				cross_chain_signature: CrossChainSignature(vec![]),
 				sidechain_pub_key: SidechainPublicKey(
 					validator.cross_chain.public().into_inner().0.to_vec(),
 				),
 				cross_chain_pub_key: CrossChainPublicKey(vec![]),
-				aura_pub_key: AuraPublicKey(validator.aura.public().as_slice().into()),
-				grandpa_pub_key: GrandpaPublicKey(validator.grandpa.public().as_slice().into()),
+				keys: validator.candidate_keys(),
 				utxo_info: UtxoInfo::default(),
 				tx_inputs: vec![signed_message.registration_utxo],
 			};
 
 			CandidateRegistrations {
-				mainchain_pub_key: MainchainPublicKey(dummy_mainchain_pub_key.public().0),
+				stake_pool_public_key: StakePoolPublicKey(dummy_mainchain_pub_key.public().0),
 				registrations: vec![registration_data],
 				stake_delegation: Some(StakeDelegation(7)),
 			}
@@ -376,7 +395,7 @@ const BOB_SEED: &str = "//2";
 #[derive(Clone)]
 pub struct TestKeys {
 	pub cross_chain: CrossChainPair,
-	pub aura: sp_consensus_aura::ed25519::AuthorityPair,
+	pub aura: sp_consensus_aura::sr25519::AuthorityPair,
 	pub grandpa: sp_consensus_grandpa::AuthorityPair,
 }
 
@@ -389,6 +408,15 @@ impl TestKeys {
 	}
 	pub fn session(&self) -> TestSessionKeys {
 		TestSessionKeys { aura: self.aura.public(), grandpa: self.grandpa.public() }
+	}
+	pub fn candidate_keys(&self) -> CandidateKeys {
+		CandidateKeys(
+			self.session()
+				.into_raw_public_keys()
+				.into_iter()
+				.map(|(value, key_type_id)| CandidateKey::new(key_type_id, value))
+				.collect(),
+		)
 	}
 }
 
@@ -448,7 +476,7 @@ macro_rules! assert_aura_authorities {
 	}};
 }
 pub(crate) use assert_aura_authorities;
-use session_manager::ValidatorManagementSessionManager;
+use pallet_session_validator_management::session_manager::ValidatorManagementSessionManager;
 use sidechain_slots::SlotsPerEpoch;
 use sp_session_validator_management::MainChainScripts;
 

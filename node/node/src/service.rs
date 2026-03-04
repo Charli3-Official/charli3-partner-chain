@@ -1,35 +1,30 @@
 //! Service and ServiceFactory implementation. Specialized wrapper over substrate service.
 
+use crate::data_sources::DataSources;
 use crate::inherent_data::{CreateInherentDataConfig, ProposalCIDP, VerifierCIDP};
-use crate::main_chain_follower::DataSources;
 use crate::rpc::GrandpaDeps;
-use db_sync_follower::metrics::register_metrics_warn_errors;
-use db_sync_follower::metrics::McFollowerMetrics;
+use authority_selection_inherents::AuthoritySelectionDataSource;
 use futures::FutureExt;
+use partner_chains_db_sync_data_sources::McFollowerMetrics;
+use partner_chains_db_sync_data_sources::register_metrics_warn_errors;
+use partner_chains_runtime::{self, RuntimeApi, opaque::Block};
 use sc_client_api::{Backend, BlockBackend};
 use sc_consensus_aura::{ImportQueueParams, SlotProportion, StartAuraParams};
 use sc_consensus_grandpa::SharedVoterState;
 pub use sc_executor::WasmExecutor;
 use sc_partner_chains_consensus_aura::import_queue as partner_chains_aura_import_queue;
-use sc_service::{error::Error as ServiceError, Configuration, TaskManager, WarpSyncConfig};
+use sc_service::{Configuration, TaskManager, WarpSyncConfig, error::Error as ServiceError};
 use sc_telemetry::{Telemetry, TelemetryWorker};
 use sc_transaction_pool_api::OffchainTransactionPoolFactory;
 use sidechain_domain::mainchain_epoch::MainchainEpochConfig;
 use sidechain_mc_hash::McHashInherentDigest;
-use sidechain_runtime::{self, opaque::Block, RuntimeApi};
-use sp_consensus_aura::ed25519::AuthorityPair as AuraPair;
+use sp_consensus_aura::sr25519::AuthorityPair as AuraPair;
 use sp_partner_chains_consensus_aura::block_proposal::PartnerChainsProposerFactory;
 use sp_runtime::traits::Block as BlockT;
 use std::{sync::Arc, time::Duration};
 use time_source::SystemTimeSource;
 use tokio::task;
 
-/// Only enable the benchmarking host functions when we actually want to benchmark.
-#[cfg(feature = "runtime-benchmarks")]
-type HostFunctions =
-	(sp_io::SubstrateHostFunctions, frame_benchmarking::benchmarking::HostFunctions);
-
-#[cfg(not(feature = "runtime-benchmarks"))]
 type HostFunctions = sp_io::SubstrateHostFunctions;
 
 pub(crate) type FullClient =
@@ -40,6 +35,27 @@ type FullSelectChain = sc_consensus::LongestChain<FullBackend, Block>;
 /// The minimum period of blocks on which justifications will be
 /// imported and generated.
 const GRANDPA_JUSTIFICATION_PERIOD: u32 = 512;
+
+/// This function provides dependencies of [partner_chains_node_commands::PartnerChainsSubcommand].
+/// It is not mandatory to have such a dedicated function, [new_partial] could be enough,
+/// however using such a specialized function decreases number of possible failures and wiring time.
+pub fn new_pc_command_deps(
+	config: &Configuration,
+) -> Result<
+	(Arc<FullClient>, TaskManager, Arc<dyn AuthoritySelectionDataSource + Send + Sync>),
+	ServiceError,
+> {
+	let data_sources = task::block_in_place(|| {
+		config
+			.tokio_handle
+			.block_on(crate::data_sources::create_cached_data_sources(None))
+	})?;
+	let executor = sc_service::new_wasm_executor(&config.executor);
+	let (client, _, _, task_manager) =
+		sc_service::new_full_parts::<Block, RuntimeApi, _>(config, None, executor)?;
+	let client = Arc::new(client);
+	Ok((client, task_manager, data_sources.authority_selection))
+}
 
 #[allow(clippy::type_complexity)]
 pub fn new_partial(
@@ -68,11 +84,9 @@ pub fn new_partial(
 > {
 	let mc_follower_metrics = register_metrics_warn_errors(config.prometheus_registry());
 	let data_sources = task::block_in_place(|| {
-		config.tokio_handle.block_on(
-			crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
-				mc_follower_metrics.clone(),
-			),
-		)
+		config
+			.tokio_handle
+			.block_on(crate::data_sources::create_cached_data_sources(mc_follower_metrics.clone()))
 	})?;
 
 	let telemetry = config
@@ -147,7 +161,9 @@ pub fn new_partial(
 			client.clone(),
 			data_sources.mc_hash.clone(),
 			data_sources.authority_selection.clone(),
-			data_sources.native_token.clone(),
+			data_sources.block_participation.clone(),
+			data_sources.governed_map.clone(),
+			data_sources.bridge.clone(),
 		),
 		spawner: &task_manager.spawn_essential_handle(),
 		registry: config.prometheus_registry(),
@@ -168,7 +184,20 @@ pub fn new_partial(
 	})
 }
 
-pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as BlockT>::Hash>>(
+pub async fn new_full(config: Configuration) -> Result<TaskManager, ServiceError> {
+	let task_manager = match config.network.network_backend {
+		sc_network::config::NetworkBackendType::Libp2p => {
+			new_full_base::<sc_network::NetworkWorker<_, _>>(config).await?
+		},
+		sc_network::config::NetworkBackendType::Litep2p => {
+			new_full_base::<sc_network::Litep2pNetworkBackend>(config).await?
+		},
+	};
+
+	Ok(task_manager)
+}
+
+pub async fn new_full_base<Network: sc_network::NetworkBackend<Block, <Block as BlockT>::Hash>>(
 	config: Configuration,
 ) -> Result<TaskManager, ServiceError> {
 	if let Some(git_hash) = std::option_env!("EARTHLY_GIT_HASH") {
@@ -261,7 +290,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 		let shared_voter_state = shared_voter_state.clone();
 		let shared_authority_set = grandpa_link.shared_authority_set().clone();
 		let justification_stream = grandpa_link.justification_stream();
-		let main_chain_follower_data_sources = data_sources.clone();
+		let data_sources = data_sources.clone();
 
 		move |subscription_executor| {
 			let grandpa = GrandpaDeps {
@@ -278,7 +307,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				client: client.clone(),
 				pool: pool.clone(),
 				grandpa,
-				main_chain_follower_data_sources: main_chain_follower_data_sources.clone(),
+				data_sources: data_sources.clone(),
 				time_source: Arc::new(SystemTimeSource),
 			};
 			crate::rpc::create_full(deps).map_err(Into::into)
@@ -342,7 +371,9 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				client.clone(),
 				data_sources.mc_hash.clone(),
 				data_sources.authority_selection.clone(),
-				data_sources.native_token.clone(),
+				data_sources.block_participation,
+				data_sources.governed_map,
+				data_sources.bridge.clone(),
 			),
 			force_authoring,
 			backoff_authoring_blocks,

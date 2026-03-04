@@ -1,14 +1,15 @@
 use crate::chain_spec::get_account_id_from_seed;
 use crate::chain_spec::*;
+use authority_selection_inherents::CommitteeMember;
+use partner_chains_runtime::{
+	AccountId, AuraConfig, BalancesConfig, BridgeConfig, GovernedMapConfig, GrandpaConfig,
+	OracleConfig, RuntimeGenesisConfig, SessionCommitteeManagementConfig, SessionConfig,
+	SidechainConfig, SudoConfig, SystemConfig, TestHelperPalletConfig,
+};
 use sc_service::ChainType;
 use sidechain_domain::*;
-use sidechain_runtime::{
-	AccountId, AuraConfig, BalancesConfig, GrandpaConfig, NativeTokenManagementConfig,
-	OracleConfig, RuntimeGenesisConfig, SessionCommitteeManagementConfig, SessionConfig,
-	SidechainConfig, SudoConfig, SystemConfig,
-};
 use sp_core::bytes::from_hex;
-use sp_core::ed25519;
+use sp_core::{ed25519, sr25519};
 use std::str::FromStr;
 
 pub fn authority_keys(
@@ -16,7 +17,7 @@ pub fn authority_keys(
 	grandpa_pub_key: &str,
 	sidechain_pub_key: &str,
 ) -> AuthorityKeys {
-	let aura_pk = ed25519::Public::from_raw(from_hex(aura_pub_key).unwrap().try_into().unwrap());
+	let aura_pk = sr25519::Public::from_raw(from_hex(aura_pub_key).unwrap().try_into().unwrap());
 	let granda_pk =
 		ed25519::Public::from_raw(from_hex(grandpa_pub_key).unwrap().try_into().unwrap());
 	let sidechain_pk = sidechain_domain::SidechainPublicKey(from_hex(sidechain_pub_key).unwrap());
@@ -76,7 +77,7 @@ pub fn staging_endowed_accounts() -> Vec<AccountId> {
 		AccountId::from_str("0x22c9f9d51022b7ad2204131e6268ab079c84bcdb44a4c6907affed5779da9c7b")
 			.unwrap(),
 		staging_sudo_key(),
-		// SDETs test accounts, keys are in E2E-tests/secrets
+		// SDETs test accounts, keys are in e2e-tests/secrets
 		// negative-test
 		AccountId::from_str("5F1N52dZx48UpXNLtcCzSMHZEroqQDuYKfidg46Tp37SjPcE").unwrap(),
 		// faucet-0
@@ -114,6 +115,7 @@ pub fn staging_genesis(
 	endowed_accounts: Vec<AccountId>,
 	_enable_println: bool,
 ) -> Result<serde_json::Value, envy::Error> {
+	let genesis_utxo = sp_sidechain::read_genesis_utxo_from_env_with_defaults()?;
 	let config = RuntimeGenesisConfig {
 		system: SystemConfig { ..Default::default() },
 		balances: BalancesConfig {
@@ -136,20 +138,26 @@ pub fn staging_genesis(
 				})
 				.collect(),
 		},
-		sidechain: SidechainConfig {
-			genesis_utxo: sp_sidechain::read_genesis_utxo_from_env_with_defaults()?,
-			..Default::default()
-		},
+		sidechain: SidechainConfig { genesis_utxo, ..Default::default() },
 		pallet_session: Default::default(),
 		session_committee_management: SessionCommitteeManagementConfig {
 			initial_authorities: initial_authorities
 				.into_iter()
-				.map(|keys| (keys.cross_chain, keys.session))
+				.map(|keys| CommitteeMember::permissioned(keys.cross_chain, keys.session))
 				.collect(),
 			main_chain_scripts: sp_session_validator_management::MainChainScripts::read_from_env()?,
 		},
-		native_token_management: NativeTokenManagementConfig {
-			main_chain_scripts: sp_native_token_management::MainChainScripts::read_from_env()?,
+		governed_map: GovernedMapConfig {
+			main_chain_scripts: Some(sp_governed_map::MainChainScriptsV1::read_from_env()?),
+			..Default::default()
+		},
+		test_helper_pallet: TestHelperPalletConfig {
+			participation_data_release_period: 30,
+			..Default::default()
+		},
+		bridge: BridgeConfig {
+			main_chain_scripts: Some(sp_partner_chains_bridge::MainChainScripts::read_from_env()?),
+			initial_checkpoint: Some(genesis_utxo),
 			..Default::default()
 		},
 		oracle: OracleConfig {

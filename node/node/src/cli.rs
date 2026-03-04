@@ -1,6 +1,9 @@
 use clap::command;
-use partner_chains_node_commands::PartnerChainsSubcommand;
+use partner_chains_cli::{AURA, GRANDPA, KeyDefinition};
+use partner_chains_node_commands::{PartnerChainRuntime, PartnerChainsSubcommand};
+use partner_chains_runtime::opaque::SessionKeys;
 use sc_cli::RunCmd;
+use sp_runtime::AccountId32;
 
 #[derive(Debug, clap::Parser)]
 pub struct Cli {
@@ -11,6 +14,23 @@ pub struct Cli {
 	pub run: RunCmd,
 }
 
+#[derive(Debug, Clone)]
+pub struct WizardBindings;
+
+impl PartnerChainRuntime for WizardBindings {
+	type Keys = SessionKeys;
+
+	fn create_chain_spec(
+		config: &partner_chains_cli::CreateChainSpecConfig<SessionKeys>,
+	) -> serde_json::Value {
+		crate::chain_spec::pc_create_chain_spec(config)
+	}
+
+	fn key_definitions() -> Vec<KeyDefinition<'static>> {
+		vec![AURA, GRANDPA]
+	}
+}
+
 #[derive(Debug, clap::Subcommand)]
 pub enum Subcommand {
 	/// Key management cli utilities
@@ -18,7 +38,7 @@ pub enum Subcommand {
 	Key(sc_cli::KeySubcommand),
 
 	#[clap(flatten)]
-	PartnerChains(PartnerChainsSubcommand),
+	PartnerChains(PartnerChainsSubcommand<WizardBindings, AccountId32>),
 
 	/// Build a chain specification.
 	BuildSpec(sc_cli::BuildSpecCmd),
@@ -41,10 +61,6 @@ pub enum Subcommand {
 	/// Revert the chain to a previous state.
 	Revert(sc_cli::RevertCmd),
 
-	/// Sub-commands concerned with benchmarking.
-	#[command(subcommand)]
-	Benchmark(frame_benchmarking_cli::BenchmarkCmd),
-
 	/// Db meta columns information.
 	ChainInfo(sc_cli::ChainInfoCmd),
 }
@@ -55,6 +71,7 @@ mod registration_signatures_tests {
 
 	#[test]
 	fn registration_signatures() {
+		// TODO let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME")).unwrap();
 		let mut cmd = Command::cargo_bin("partner-chains-node").unwrap();
 		let cmd_result = cmd.args(REGISTRATION_SIGS_CMD.split(' ')).assert().success();
 		let output = std::str::from_utf8(&cmd_result.get_output().stdout).unwrap();
