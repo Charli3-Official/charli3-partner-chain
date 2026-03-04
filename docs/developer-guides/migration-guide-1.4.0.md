@@ -20,7 +20,7 @@ genesis utxo (which is the utxo burned when establishing a governance)
 
 ## Overview of the migration
 
-The migration requires multiple detailed steps but to follow them successfuly it's good to understand the big picture first:
+The migration requires multiple detailed steps but to follow them successfully it's good to understand the big picture first:
 The 1.4.0 version introduces some backwards-incompatible data schemas. This means that a simple runtime upgrade
 using `system/setCode` extrinsic would leave the chain in an inconsistent state and unable to produce blocks.
 To avoid this issue, the migration involves the following general steps:
@@ -59,7 +59,7 @@ of main chain data needs to be set up on Cardano.
 
 **Important:**
 The commands in this section should either be run in the same directory used for setting up the previous Partner Chain
-(containing the base data directory containing the keystore and the `partner-chains-cli-keys.json` file),
+(containing the base data directory containing the keystore and the `partner-chains-public-keys.json` file),
 or in a new directory that has been prepared by running the `generate-keys` commands.
 
 1. Pick the initial governance authority.
