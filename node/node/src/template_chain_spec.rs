@@ -108,6 +108,7 @@ pub fn chain_spec() -> Result<ChainSpec, envy::Error> {
 			outliers_range: 2,
 			divergency: 15,
 			trade_pairs: oracle_trade_pairs,
+			channels_to_trade_pairs: oracle_channel_mappings,
 			reward_policy_id: Some(channel_id(
 				"d83063f2c65eed65f307d7cd39798334633ceb5bbd29ef9b84f946e9",
 			)),
