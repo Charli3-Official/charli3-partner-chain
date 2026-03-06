@@ -47,7 +47,7 @@ impl AriadneInherentDataProvider {
 		parent_hash: <Block as BlockT>::Hash,
 		slot: Slot,
 		data_source: &(dyn AuthoritySelectionDataSource + Send + Sync),
-		mc_reference_epoch: McEpochNumber,
+		_mc_reference_epoch: McEpochNumber,
 	) -> Result<Self, InherentProviderCreationError>
 	where
 		CommitteeMember: CommitteeMemberT + Decode + Encode,
@@ -70,16 +70,14 @@ impl AriadneInherentDataProvider {
 			slot,
 		)?;
 
-		let data_epoch = data_source.data_epoch(for_mc_epoch).await?;
+		let _data_epoch = data_source.data_epoch(for_mc_epoch).await?;
 		// We could accept mc_reference at last slot of data_epoch, but calculations are much easier like that.
 		// Additionally, in current implementation, the inequality below is always true, thus there is no need to make it more accurate.
 		let scripts = client.runtime_api().get_main_chain_scripts(parent_hash)?;
-		if data_epoch < mc_reference_epoch {
-			Ok(AriadneInherentDataProvider::from_mc_data(data_source, for_mc_epoch, scripts)
-				.await?)
-		} else {
-			Ok(AriadneInherentDataProvider { data: None })
-		}
+		// TODO why is the condition below does not always hold?
+		// if data_epoch < mc_reference_epoch {
+		Ok(AriadneInherentDataProvider::from_mc_data(data_source, for_mc_epoch, scripts).await?)
+		// } else { Ok(AriadneInherentDataProvider { data: None }) }
 	}
 
 	async fn from_mc_data(
