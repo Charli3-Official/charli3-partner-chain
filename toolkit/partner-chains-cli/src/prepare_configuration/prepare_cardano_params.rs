@@ -1,21 +1,23 @@
 use crate::config::{CardanoParameters, ServiceConfig};
 use crate::io::IOContext;
 use crate::ogmios::{
-	get_shelley_config, EraSummary, OgmiosRequest, OgmiosResponse, ShelleyGenesisConfiguration,
+	EraSummary, OgmiosRequest, OgmiosResponse, ShelleyGenesisConfiguration, get_shelley_config,
 };
 
 pub fn prepare_cardano_params<C: IOContext>(
 	ogmios_config: &ServiceConfig,
 	context: &C,
 ) -> anyhow::Result<CardanoParameters> {
-	let addr = format!("{}", ogmios_config);
-	let eras_summaries = get_eras_summaries(&addr, context)?;
-	let shelley_config = get_shelley_config(&addr, context)?;
+	let eras_summaries = get_eras_summaries(&ogmios_config, context)?;
+	let shelley_config = get_shelley_config(&ogmios_config, context)?;
 	caradano_parameters(eras_summaries, shelley_config)
 }
 
-fn get_eras_summaries<C: IOContext>(addr: &str, context: &C) -> anyhow::Result<Vec<EraSummary>> {
-	let eras_summaries = context.ogmios_rpc(addr, OgmiosRequest::QueryLedgerStateEraSummaries)?;
+fn get_eras_summaries<C: IOContext>(
+	config: &ServiceConfig,
+	context: &C,
+) -> anyhow::Result<Vec<EraSummary>> {
+	let eras_summaries = context.ogmios_rpc(config, OgmiosRequest::QueryLedgerStateEraSummaries)?;
 	match eras_summaries {
 		OgmiosResponse::QueryLedgerStateEraSummaries(eras_summaries) => Ok(eras_summaries),
 		other => Err(anyhow::anyhow!(format!(
@@ -42,42 +44,33 @@ fn caradano_parameters(
 			.checked_add(first_epoch_era.start.time_seconds)
 			.and_then(|seconds| seconds.checked_mul(1000))
 			.ok_or_else(|| anyhow::anyhow!("First epoch timestamp overflow"))?,
+		slot_duration_millis: shelley_config.slot_length_millis,
 	})
 }
 
-// Partner Chains Main Chain follower supports only eras with 1 second slots.
-// This functions gets the first era with 1 second slots,
+// This functions gets the first era
 // such that all following eras have the same slot length and epoch length.
 fn get_first_epoch_era(eras_summaries: Vec<EraSummary>) -> Result<EraSummary, anyhow::Error> {
-	let latest_era_parameters = eras_summaries
-		.last()
-		.ok_or_else(|| anyhow::anyhow!("No eras found"))?
-		.parameters
-		.clone();
-	if latest_era_parameters.slot_length_millis != 1000 {
-		return Err(anyhow::anyhow!(
-			"Unexpected slot length in latest era, Partner Chains support only 1 second slots"
-		));
-	}
+	let latest_era = eras_summaries.last().ok_or_else(|| anyhow::anyhow!("No eras found"))?;
 	let first_epoch_era = eras_summaries
-		.into_iter()
-		.find(|era| era.parameters == latest_era_parameters)
+		.iter()
+		.find(|era| era.parameters == latest_era.parameters)
 		.ok_or_else(|| anyhow::anyhow!("No eras found"))?;
-	Ok(first_epoch_era)
+	Ok(first_epoch_era.clone())
 }
 
 #[cfg(test)]
 pub mod tests {
 
 	use super::*;
-	use crate::config::{NetworkProtocol, CHAIN_CONFIG_FILE_PATH};
+	use crate::config::NetworkProtocol;
+	use crate::ogmios::EraSummary;
 	use crate::ogmios::test_values::{
 		preprod_eras_summaries, preprod_shelley_config, preview_eras_summaries,
 		preview_shelley_config,
 	};
-	use crate::ogmios::EraSummary;
 	use crate::prepare_configuration::prepare_cardano_params::prepare_cardano_params;
-	use crate::tests::{MockIO, MockIOContext};
+	use crate::tests::{CHAIN_CONFIG_FILE_PATH, MockIO, MockIOContext};
 
 	pub(crate) const PREPROD_CARDANO_PARAMS: CardanoParameters = CardanoParameters {
 		security_parameter: 2160,
@@ -86,6 +79,7 @@ pub mod tests {
 		first_slot_number: 86400,
 		epoch_duration_millis: 432000000,
 		first_epoch_timestamp_millis: 1655769600000,
+		slot_duration_millis: 1000,
 	};
 
 	pub(crate) const PREVIEW_CARDANO_PARAMS: CardanoParameters = CardanoParameters {
@@ -95,6 +89,7 @@ pub mod tests {
 		first_slot_number: 0,
 		epoch_duration_millis: 86400000,
 		first_epoch_timestamp_millis: 1666656000000,
+		slot_duration_millis: 1000,
 	};
 
 	#[test]
@@ -124,6 +119,7 @@ pub mod tests {
 			protocol: NetworkProtocol::Https,
 			hostname: "ogmios.com".to_string(),
 			port: 7654,
+			timeout_seconds: 180,
 		};
 		let mock_context = MockIOContext::new()
 			.with_json_file(CHAIN_CONFIG_FILE_PATH, serde_json::json!({}))

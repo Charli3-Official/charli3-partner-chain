@@ -1,157 +1,115 @@
 use self::config::KEYS_FILE_PATH;
-use crate::config::config_values::DEFAULT_CHAIN_NAME;
 use crate::io::IOContext;
 use crate::keystore::*;
 use crate::permissioned_candidates::PermissionedCandidateKeys;
 use crate::{config::config_fields, *};
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use serde::Deserialize;
-use serde::Serialize;
-use sp_core::{ed25519, Pair};
+use sidechain_domain::byte_string::ByteString;
+use sp_core::{Pair, ed25519};
+use std::collections::BTreeMap;
+use std::marker::PhantomData;
 
 #[cfg(test)]
 mod tests;
 
-#[derive(Debug, clap::Parser)]
-pub struct GenerateKeysCmd {
-	pub cross_chain_key: Option<String>,
-	pub grandpa_key: Option<String>,
-	pub aura_key: Option<String>,
+#[derive(Clone, Debug, clap::Parser)]
+pub struct GenerateKeysCmd<T: PartnerChainRuntime> {
+	#[clap(skip)]
+	_phantom: PhantomData<T>,
 }
 
 #[derive(Debug)]
 pub struct GenerateKeysConfig {
-	pub chain_name: String,
 	pub substrate_node_base_path: String,
-	pub node_executable: String,
 }
 impl GenerateKeysConfig {
-	pub fn load<C: IOContext>(context: &C) -> Self {
-		// ETCM-7825: hardcoded node executable
-		let node_executable = config_fields::NODE_EXECUTABLE
-			.save_if_empty(config_fields::NODE_EXECUTABLE_DEFAULT.to_string(), context);
+	pub(crate) fn load<C: IOContext>(context: &C) -> Self {
 		Self {
-			chain_name: DEFAULT_CHAIN_NAME.into(),
 			substrate_node_base_path: config_fields::SUBSTRATE_NODE_DATA_BASE_PATH
 				.load_or_prompt_and_save(context),
-			node_executable,
 		}
 	}
 	fn keystore_path(&self) -> String {
-		keystore_path(&self.substrate_node_base_path, &self.chain_name)
+		keystore_path(&self.substrate_node_base_path)
 	}
+
 	fn network_key_path(&self) -> String {
-		let Self { chain_name, substrate_node_base_path, .. } = self;
-		network_key_path(substrate_node_base_path, chain_name)
+		let Self { substrate_node_base_path, .. } = self;
+		network_key_path(substrate_node_base_path)
 	}
 }
 
-pub fn network_key_path(substrate_node_base_path: &str, chain_name: &str) -> String {
-	format!("{substrate_node_base_path}/chains/{chain_name}/network/secret_ed25519")
-}
-pub fn keystore_path(substrate_node_base_path: &str, chain_name: &str) -> String {
-	format!("{substrate_node_base_path}/chains/{chain_name}/keystore")
+fn network_key_directory(substrate_node_base_path: &str) -> String {
+	format!("{substrate_node_base_path}/network")
 }
 
-impl CmdRun for GenerateKeysCmd {
+pub(crate) fn network_key_path(substrate_node_base_path: &str) -> String {
+	format!("{}/secret_ed25519", network_key_directory(substrate_node_base_path))
+}
+
+impl<T: PartnerChainRuntime> CmdRun for GenerateKeysCmd<T> {
 	fn run<C: IOContext>(&self, context: &C) -> anyhow::Result<()> {
 		context.eprint(
-			"This 🧙 wizard will generate the following keys and save them to your node's keystore:"
+			"This 🧙 wizard will generate the following keys and save them to your node's keystore:",
 		);
-		context.eprint("→  an ECDSA Cross-chain key");
-		context.eprint("→  an ED25519 Grandpa key");
-		context.eprint("→  an ED25519 Aura key");
+		context.eprint(&format!("→ {} {} key", CROSS_CHAIN.scheme, CROSS_CHAIN.name));
+		for key_def in T::key_definitions() {
+			context.eprint(&format!("→ {} {} key", key_def.scheme, key_def.name));
+		}
 		context.eprint("It will also generate a network key for your node if needed.");
 		context.enewline();
 
-		set_dummy_env_vars(context);
+		let chain_spec_path = write_temp_chain_spec(
+			context,
+			T::create_chain_spec(&CreateChainSpecConfig::<T::Keys>::default()),
+		);
 
 		let config = GenerateKeysConfig::load(context);
 		context.enewline();
 
-		generate_spo_keys(&config, context, self)?;
+		generate_spo_keys::<C, T>(&config, &chain_spec_path, context)?;
+
 		context.enewline();
 
-		generate_network_key(&config, context)?;
+		generate_network_key(&config, &chain_spec_path, context)?;
 		context.enewline();
 
 		context.eprint("🚀 All done!");
-
+		context.delete_file(&chain_spec_path)?;
 		Ok(())
 	}
 }
 
-pub fn verify_executable<C: IOContext>(
-	GenerateKeysConfig { node_executable, .. }: &GenerateKeysConfig,
-	context: &C,
-) -> anyhow::Result<()> {
-	if !context.file_exists(node_executable) {
-		return Err(anyhow!("Partner Chains Node executable file ({node_executable}) is missing"));
-	}
-	Ok(())
+fn write_temp_chain_spec<C: IOContext>(context: &C, chain_spec: serde_json::Value) -> String {
+	let dir_path = context.new_tmp_dir();
+	let dir_path = dir_path.to_str().expect("temp dir path is correct utf-8");
+	let path = format!("{dir_path}/chain-spec.json");
+	let content = format!("{chain_spec}");
+	context.write_file(&path, &content);
+	path
 }
 
-pub fn set_dummy_env_vars<C: IOContext>(context: &C) {
-	context.set_env_var(
-		"GENESIS_UTXO",
-		"0000000000000000000000000000000000000000000000000000000000000000#0",
-	);
-	context.set_env_var("COMMITTEE_CANDIDATE_ADDRESS", "addr_10000");
-	context.set_env_var(
-		"D_PARAMETER_POLICY_ID",
-		"00000000000000000000000000000000000000000000000000000000",
-	);
-	context.set_env_var(
-		"PERMISSIONED_CANDIDATES_POLICY_ID",
-		"00000000000000000000000000000000000000000000000000000000",
-	);
-	context.set_env_var(
-		"NATIVE_TOKEN_POLICY_ID",
-		"00000000000000000000000000000000000000000000000000000000",
-	);
-	context.set_env_var(
-		"NATIVE_TOKEN_ASSET_NAME",
-		"00000000000000000000000000000000000000000000000000000000",
-	);
-	context.set_env_var(
-		"ILLIQUID_SUPPLY_VALIDATOR_ADDRESS",
-		"00000000000000000000000000000000000000000000000000000000",
-	);
-}
-
-pub fn generate_spo_keys<C: IOContext>(
+pub(crate) fn generate_spo_keys<C: IOContext, T: PartnerChainRuntime>(
 	config: &GenerateKeysConfig,
+	chain_spec_path: &str,
 	context: &C,
-	cmd: &GenerateKeysCmd,
 ) -> anyhow::Result<()> {
 	if prompt_can_write("keys file", KEYS_FILE_PATH, context) {
-		let cross_chain_key = if let Some(key) = &cmd.cross_chain_key {
-			import_existing_key(config, context, &CROSS_CHAIN, key)?
-		} else {
-			generate_or_load_key(config, context, &CROSS_CHAIN)?
-		};
+		let partner_chains_key =
+			generate_or_load_key(config, context, chain_spec_path, &CROSS_CHAIN)?;
 		context.enewline();
+		let mut keys: BTreeMap<String, ByteString> = BTreeMap::new();
+		for key_definition in T::key_definitions() {
+			let generated_key =
+				generate_or_load_key(config, context, chain_spec_path, &key_definition)?;
+			context.enewline();
+			keys.insert(key_definition.key_type.to_owned(), generated_key);
+		}
 
-		let grandpa_key = if let Some(key) = &cmd.grandpa_key {
-			import_existing_key(config, context, &GRANDPA, key)?
-		} else {
-			generate_or_load_key(config, context, &GRANDPA)?
-		};
-		context.enewline();
-
-		let aura_key = if let Some(key) = &cmd.aura_key {
-			import_existing_key(config, context, &AURA, key)?
-		} else {
-			generate_or_load_key(config, context, &AURA)?
-		};
-		context.enewline();
-
-		let public_keys_json = serde_json::to_string_pretty(&PermissionedCandidateKeys {
-			sidechain_pub_key: cross_chain_key,
-			aura_pub_key: aura_key,
-			grandpa_pub_key: grandpa_key,
-		})
-		.expect("Failed to serialize public keys");
+		let public_keys_json =
+			serde_json::to_string_pretty(&PermissionedCandidateKeys { partner_chains_key, keys })
+				.expect("PermissionedCandidateKeys have only UTF-8 encodable ids");
 		context.write_file(KEYS_FILE_PATH, &public_keys_json);
 
 		context.eprint(&format!(
@@ -167,8 +125,9 @@ pub fn generate_spo_keys<C: IOContext>(
 	Ok(())
 }
 
-pub fn generate_network_key<C: IOContext>(
+pub(crate) fn generate_network_key<C: IOContext>(
 	config: &GenerateKeysConfig,
+	chain_spec_path: &str,
 	context: &C,
 ) -> anyhow::Result<()> {
 	let maybe_existing_key =
@@ -181,7 +140,7 @@ pub fn generate_network_key<C: IOContext>(
 		},
 		None => {
 			context.eprint("⚙️ Generating network key");
-			run_generate_network_key(config, context)?;
+			run_generate_network_key(config, chain_spec_path, context)?;
 		},
 		Some(Err(err)) => {
 			context.eprint(&format!(
@@ -190,23 +149,28 @@ pub fn generate_network_key<C: IOContext>(
 			));
 			context.eprint("⚙️ Regenerating the network key");
 			context.delete_file(&config.network_key_path())?;
-			run_generate_network_key(config, context)?;
+			run_generate_network_key(config, chain_spec_path, context)?;
 		},
 	};
 	Ok(())
 }
 
 fn run_generate_network_key<C: IOContext>(
-	GenerateKeysConfig { substrate_node_base_path, node_executable, .. }: &GenerateKeysConfig,
+	config: &GenerateKeysConfig,
+	chain_spec_path: &str,
 	context: &C,
 ) -> anyhow::Result<()> {
+	let node_executable = context.current_executable()?;
+	let network_key_directory = network_key_directory(&config.substrate_node_base_path);
+	let network_key_path = config.network_key_path();
+	context.run_command(&format!("mkdir -p {network_key_directory}"))?;
 	context.run_command(&format!(
-		"{node_executable} key generate-node-key --base-path {substrate_node_base_path}"
+		"{node_executable} key generate-node-key --chain {chain_spec_path} --file {network_key_path}"
 	))?;
 	Ok(())
 }
 
-pub fn decode_network_key(key_str: &str) -> anyhow::Result<ed25519::Pair> {
+fn decode_network_key(key_str: &str) -> anyhow::Result<ed25519::Pair> {
 	hex::decode(key_str)
 		.context("Invalid hex")
 		.and_then(|slice| ed25519::Pair::from_seed_slice(&slice).context("Invalid ed25519 bytes"))
@@ -214,93 +178,61 @@ pub fn decode_network_key(key_str: &str) -> anyhow::Result<ed25519::Pair> {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct KeyGenerationOutput {
+struct KeyGenerationOutput {
 	public_key: String,
 	secret_phrase: String,
 }
 
-const PHRASES_BACKUP_FILE: &str = "partner-chains-phrases-backup.json";
-
-#[derive(Debug, Serialize, Deserialize)]
-struct KeyPhraseBackup {
-	key_type: String,
-	scheme: String,
-	public_key: String,
-	secret_phrase: String,
-}
-
-pub fn generate_keys<C: IOContext>(
+fn generate_keys<C: IOContext>(
 	context: &C,
-	executable: &str,
-	KeyDefinition { scheme, name, key_type, .. }: &KeyDefinition,
+	KeyDefinition { scheme, name, .. }: &KeyDefinition,
 ) -> anyhow::Result<KeyGenerationOutput> {
+	let executable = context.current_executable()?;
 	context.eprint(&format!("⚙️ Generating {name} ({scheme}) key"));
 	let output = context
 		.run_command(&format!("{executable} key generate --scheme {scheme} --output-type json"))?;
 
-	let key_output: KeyGenerationOutput = serde_json::from_str(&output)
-		.map_err(|_| anyhow!("Failed to parse generated keys json: {output}"))?;
-
-	// Save the phrase to backup file
-	let backup = KeyPhraseBackup {
-		key_type: key_type.to_string(),
-		scheme: scheme.to_string(),
-		public_key: key_output.public_key.clone(),
-		secret_phrase: key_output.secret_phrase.clone(),
-	};
-
-	// Read existing backups or create new vec
-	let mut backups: Vec<KeyPhraseBackup> = context
-		.read_file(PHRASES_BACKUP_FILE)
-		.and_then(|content| serde_json::from_str(&content).ok())
-		.unwrap_or_default();
-
-	// Add new backup
-	backups.push(backup);
-
-	// Store updated backups
-	context.write_file(
-		PHRASES_BACKUP_FILE,
-		&serde_json::to_string_pretty(&backups).expect("Failed to serialize backups"),
-	);
-
-	context.eprint(&format!("💾 Phrases backup stored in {}", PHRASES_BACKUP_FILE));
-
-	Ok(key_output)
+	serde_json::from_str(&output)
+		.map_err(|_| anyhow!("Failed to parse generated keys json: {output}"))
 }
 
-pub fn store_keys<C: IOContext>(
+fn store_keys<C: IOContext>(
 	context: &C,
-	GenerateKeysConfig { chain_name, substrate_node_base_path: base_path, node_executable }: &GenerateKeysConfig,
+	GenerateKeysConfig { substrate_node_base_path: base_path }: &GenerateKeysConfig,
 	key_def: &KeyDefinition,
 	KeyGenerationOutput { secret_phrase, public_key }: &KeyGenerationOutput,
+	chain_spec_file_path: &str,
 ) -> anyhow::Result<()> {
+	let node_executable = context.current_executable()?;
 	let KeyDefinition { scheme, key_type, name } = key_def;
 	context.eprint(&format!("💾 Inserting {name} ({scheme}) key"));
-	let cmd = format!("{node_executable} key insert --base-path {base_path} --scheme {scheme} --key-type {key_type} --suri '{secret_phrase}'");
+	let keystore_path = keystore_path(base_path);
+	let cmd = format!(
+		"{node_executable} key insert --chain {chain_spec_file_path} --keystore-path {keystore_path} --scheme {scheme} --key-type {key_type} --suri '{secret_phrase}'"
+	);
 	let _ = context.run_command(&cmd)?;
-	let store_path =
-		format!("{base_path}/chains/{chain_name}/keystore/{}{public_key}", key_def.key_type_hex(),);
+	let store_path = format!("{}/{}{public_key}", keystore_path, key_def.key_type_hex(),);
 	context.eprint(&format!("💾 {name} key stored at {store_path}",));
 	Ok(())
 }
 
-pub fn generate_or_load_key<C: IOContext>(
+fn generate_or_load_key<C: IOContext>(
 	config: &GenerateKeysConfig,
 	context: &C,
+	chain_spec_path: &str,
 	key_def: &KeyDefinition,
-) -> anyhow::Result<String> {
-	let GenerateKeysConfig { node_executable, .. } = config;
+) -> anyhow::Result<ByteString> {
 	let keystore_path = config.keystore_path();
 	let existing_keys = context.list_directory(&keystore_path)?.unwrap_or_default();
 
-	if let Some(key) = find_existing_key(&existing_keys, key_def) {
+	let key: anyhow::Result<String> = if let Some(key) = find_existing_key(&existing_keys, key_def)
+	{
 		if context.prompt_yes_no(
 			&format!("A {} key already exists in store: {key} - overwrite it?", key_def.name),
 			false,
 		) {
-			let new_key = generate_keys(context, node_executable, key_def)?;
-			store_keys(context, config, key_def, &new_key)?;
+			let new_key = generate_keys(context, key_def)?;
+			store_keys(context, config, key_def, &new_key, chain_spec_path)?;
 
 			let old_key_path = format!("{keystore_path}/{}{key}", key_def.key_type_hex());
 			context
@@ -312,34 +244,10 @@ pub fn generate_or_load_key<C: IOContext>(
 			Ok(format!("0x{key}"))
 		}
 	} else {
-		let new_key = generate_keys(context, node_executable, key_def)?;
-		store_keys(context, config, key_def, &new_key)?;
+		let new_key = generate_keys(context, key_def)?;
+		store_keys(context, config, key_def, &new_key, chain_spec_path)?;
 
 		Ok(new_key.public_key)
-	}
-}
-
-pub fn import_existing_key<C: IOContext>(
-	config: &GenerateKeysConfig,
-	context: &C,
-	key_def: &KeyDefinition,
-	secret_phrase: &str,
-) -> anyhow::Result<String> {
-	context.eprint(&format!("💾 Importing existing {} key", key_def.name));
-	store_keys(
-		context,
-		config,
-		key_def,
-		&KeyGenerationOutput {
-			secret_phrase: secret_phrase.to_string(),
-			public_key: "".to_string(), // This will be updated by store_keys
-		},
-	)?;
-
-	// Return the public key from the stored key
-	let keystore_path = config.keystore_path();
-	let existing_keys = context.list_directory(&keystore_path)?.unwrap_or_default();
-	find_existing_key(&existing_keys, key_def)
-		.map(|key| format!("0x{key}"))
-		.ok_or_else(|| anyhow!("Failed to find imported key in keystore"))
+	};
+	ByteString::decode_hex(&key?).map_err(|e| anyhow!(e))
 }

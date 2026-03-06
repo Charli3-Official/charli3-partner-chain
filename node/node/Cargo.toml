@@ -1,13 +1,13 @@
 [package]
 name = "partner-chains-node"
-version = "1.4.0"
+version.workspace = true
 description = "A reference implementation of a partner chain node"
-authors = ["IOG"]
-homepage = "https://iohk.io/"
-edition = "2021"
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+repository.workspace = true
 license = "Unlicense"
 publish = false
-repository = "https://github.com/input-output-hk/partner-chains/"
 build = "build.rs"
 
 [package.metadata.docs.rs]
@@ -15,6 +15,9 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 [[bin]]
 name = "partner-chains-node"
+
+[lints]
+workspace = true
 
 [dependencies]
 async-trait = { workspace = true }
@@ -42,8 +45,6 @@ sp-consensus-grandpa = { workspace = true }
 sc-client-api = { workspace = true }
 # This node template uses RocksDB as the storage backend by default.
 sc-client-db = { workspace = true, features = ["rocksdb"] }
-plutus = { workspace = true }
-plutus-datum-derive = { workspace = true }
 sp-runtime = { workspace = true }
 sp-io = { workspace = true }
 sp-timestamp = { workspace = true }
@@ -54,7 +55,7 @@ pallet-sudo = { workspace = true }
 pallet-multisig = { workspace = true }
 frame-system = { workspace = true }
 pallet-transaction-payment = { workspace = true }
-sp-block-rewards = { workspace = true }
+sp-block-production-log = { workspace = true }
 sidechain-domain = { workspace = true }
 sidechain-slots = { workspace = true }
 sp-sidechain = { workspace = true }
@@ -70,8 +71,10 @@ substrate-prometheus-endpoint = { workspace = true }
 thiserror = { workspace = true }
 time-source = { workspace = true }
 derive-new = { workspace = true }
+partner-chains-cli = { workspace = true }
 partner-chains-node-commands = { workspace = true }
 envy = { workspace = true }
+sp-partner-chains-bridge = { workspace = true }
 
 # These dependencies are used for the node template's RPCs
 jsonrpsee = { workspace = true }
@@ -82,20 +85,39 @@ sp-blockchain = { workspace = true }
 sp-block-builder = { workspace = true }
 sc-basic-authorship = { workspace = true }
 substrate-frame-rpc-system = { workspace = true }
+pallet-block-producer-fees-rpc = { workspace = true }
+sp-block-producer-fees = { workspace = true }
 pallet-transaction-payment-rpc = { workspace = true }
 
 # These dependencies are used for runtime benchmarking
 frame-benchmarking = { workspace = true }
-frame-benchmarking-cli = { workspace = true }
 
 # Local Dependencies
-sidechain-runtime = { workspace = true }
+partner-chains-runtime = { workspace = true }
 sidechain-mc-hash = { workspace = true, features = ["mock"] }
-sp-native-token-management = { workspace = true }
-db-sync-follower = { workspace = true, features = ["block-source", "candidate-source", "native-token", "mc-hash", "sidechain-rpc"] }
-main-chain-follower-mock = { workspace = true, features = ["block-source", "candidate-source", "native-token", "mc-hash", "sidechain-rpc"] }
+partner-chains-db-sync-data-sources = { workspace = true, features = [
+	"block-source",
+	"candidate-source",
+	"governed-map",
+	"mc-hash",
+	"sidechain-rpc",
+	"block-participation",
+	"bridge",
+] }
+partner-chains-mock-data-sources = { workspace = true, features = [
+	"block-source",
+	"candidate-source",
+	"governed-map",
+	"mc-hash",
+	"sidechain-rpc",
+	"block-participation",
+	"bridge",
+] }
 tokio = { workspace = true }
-cli-commands = { workspace = true }
+sp-block-participation = { workspace = true, features = ["std"] }
+sp-block-producer-metadata = { workspace = true, features = ["std"] }
+pallet-block-producer-metadata-rpc = { workspace = true }
+sp-governed-map = { workspace = true, features = ["std"] }
 
 [build-dependencies]
 substrate-build-script-utils = { workspace = true }
@@ -104,15 +126,8 @@ substrate-build-script-utils = { workspace = true }
 hex-literal = { workspace = true }
 time-source = { workspace = true, features = ["mock"] }
 assert_cmd = { workspace = true }
-sp-native-token-management = { workspace = true, features = ["mock"] }
-pallet-sidechain-rpc = { workspace = true, features = ["mock"] }
+pallet-sidechain-rpc = { workspace = true }
 authority-selection-inherents = { workspace = true, features = ["mock"] }
 
 [features]
 default = ["sidechain-domain/std"]
-# Dependencies that are only required if runtime benchmarking should be build.
-runtime-benchmarks = [
-	"sidechain-runtime/runtime-benchmarks",
-	"frame-benchmarking/runtime-benchmarks",
-	"frame-benchmarking-cli/runtime-benchmarks",
-]

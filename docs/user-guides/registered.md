@@ -5,11 +5,10 @@ A registered block producer is a Cardano stake pool operator (SPO) that desires 
 ## Order of Operations
 1. Become a Cardano SPO
 2. Install partner chains dependencies
-    1. Cardano node v10.1.4
-        1. Ogmios v6.11.0
-        2. Kupo - v2.10.0
-        3. Cardano DB Sync v13.6.0.4 (PostgreSQL v15.3+)
-    2. Download the partner chain node v1.4.0
+    1. Cardano node
+        1. Ogmios
+        2. Cardano DB Sync
+    2. Download the partner chain node
 3. Run the generate-keys wizard
 4. Obtain chain parameters from the chain builder
 5. Register for the partner chain
@@ -25,15 +24,21 @@ This guide is currently aimed at the **preview testnet only**. In most `cardano-
 
 ### 1. Become a Cardano SPO on preview
 
-Cardano SPO keys are necessary to register as a partner chain validator. The installation for a Cardano SPO is out of the scope of this guide. Refer to the [Cardano course handbook](https://cardano-course.gitbook.io/cardano-course/handbook) for documentation and video instruction.
+An operational Cardano Stake Pool is required to validate a partner chain as a Registered user. The installation for a Cardano Stake Pool is out of the scope of this guide. Refer to the [Cardano course handbook](https://cardano-course.gitbook.io/cardano-course/handbook) for documentation and video instruction.
 
-Once you have the Cardano SPO keys, you are ready to continue with this guide.
+Once you have a Cardano Stake Pool registered on the preview network, you are ready to continue with this guide.
 
 ### 2. Install partner chain dependencies
 
-To run the partner chains stack, several dependencies need to be installed on the Cardano node.
+To run the partner chains stack, several dependencies need to be installed on the same machine as the Cardano node.
 
-Ogmios, Kupo and DB Sync are essential to enable registration communication with the main chain (Cardano).
+Ogmios and DB Sync are essential to enable registration communication with the main chain (Cardano).
+
+---
+**NOTE**
+
+Consult the Compatibility matrix on the releases page for dependency version compatibility for a particular release. These change with each [release](https://github.com/input-output-hk/partner-chains/releases).
+---
 
 ### 2.1 Cardano node dependencies
 
@@ -46,7 +51,7 @@ Be mindful of file paths in the instruction sets below. Your `cardano-node` may 
 
 ---
 
-### 2.1.1 Ogmios - v6.11.0
+### 2.1.1 Ogmios
 
 Ogmios is a lightweight bridge interface for `cardano-node`. It offers a WebSocket API that enables local clients to speak to the main chain via JSON/RPC.
 
@@ -89,51 +94,13 @@ journalctl -fu ogmios.service
 
 For further instructions, please see [Ogmios](https://ogmios.dev/getting-started/building/).
 
-### 2.1.2 Kupo - v2.10.0
-
-Kupo is a fast, lightweight and configurable chain indexer for Cardano.
-
-You may find it convenient to install [Kupo](https://github.com/CardanoSolutions/kupo) via pre-built binaries as well. You can also build Kupo from source.
-
-1. Obtain the [binary](https://github.com/CardanoSolutions/kupo/releases)
-  1. Just the Kupo binary is needed, not the SQLite3
-2. Change the file to an executable: `chmod +x /home/ubuntu/kupo`
-3. Add executable to PATH `sudo mv kup /usr/local/bin`
-4. Create a working directory: `mkdir ~/kupo`
-5. Run Kupo as a service:
-```
-sudo tee /etc/systemd/system/kupo.service > /dev/null <<'EOF'
-[Unit]
-Description=Kupo Service
-After=network.target
-
-[Service]
-User=ubuntu
-Type=simple
-Environment="HOME=/home/ubuntu"
-ExecStart=/usr/local/bin/kupo \
-  --node-socket $HOME/preview/node.socket \
-  --node-config $HOME/preview/configs/config.json \
-  --since origin \
-  --defer-db-indexes \
-  --match "*" \
-  --workdir $HOME/kupo
-Restart=on-failure
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-sudo systemctl daemon-reload && \
-sudo systemctl enable kupo.service && \
-sudo systemctl start kupo.service
-```
-
-Please refer to [Kupo](https://cardanosolutions.github.io/kupo/#section/Overview) for detailed instructions.
-
-### 2.1.3 Cardano DB Sync v13.6.0.4
+### 2.1.2 Cardano DB Sync
 
 The partner chain needs DB Sync on a `cardano-node` to observe Cardano's state.
+
+Cardano DB Sync is configurable in regards to the data it indexes.
+The default configuration works well, if you don't use the default configuration,
+then please read [partner-chains-db-sync-data-sources module header](../../toolkit/data-sources/db-sync/src/lib.rs)
 
 #### A critical note on Cardano DB Sync!
 
@@ -234,7 +201,7 @@ journalctl -fu cardano-db-sync.service
 ---
 **WARNING**
 
-Ensure that the node is synced with the network to 100% as well as Kupo and DB Sync before continuing beyond this point. On preview network, it is roughly 24 hours before sync is complete.
+Ensure that the node is synced with the network to 100% as well as DB Sync before continuing beyond this point. On preview network, it is roughly 24 hours before sync is complete.
 
 ---
 
@@ -250,13 +217,13 @@ The generate-keys wizard will generate necessary keys and save them to your node
 
 1. ECDSA cross-chain key
 2. ED25519 Grandpa key
-3. ED25519 Aura key
+3. SR25519 Aura key
 
 If these keys already exist in the node’s keystore, you will be asked to overwrite existing keys. The wizard will also generate a network key for your node if needed.
 
 1. To start the wizard, run the following command in the node repository:
-`./partner-chains-cli generate-keys`
-3. Input the node base path. It is saved in `partner-chains-cli-resources-config.json`
+`./partner-chains-node wizards generate-keys`
+3. Input the node base path. It is saved in `pc-resources-config.json`
 
 Now the wizard will output `partner-chains-public-keys.json` containing three keys:
 
@@ -272,7 +239,7 @@ Now the wizard will output `partner-chains-public-keys.json` containing three ke
 
 Obtaining the chain parameters needs to be done manually.
 
-Contact the chain builder and request the `chain-spec.json` file and the `partner-chains-cli-chain-config.json` file.
+Contact the chain builder and request the `chain-spec.json` file and the `pc-chain-config.json` file.
 
 ### 5. Register for the partner chain
 
@@ -282,7 +249,7 @@ Registration is a three-step process, with the second step executed on the 'cold
 
 The register-1 wizard obtains the registration UTXO.
 
-1. Start the wizard: `./partner-chains-cli register1`
+1. Start the wizard: `./partner-chains-node wizards register1`
 2. Follow the steps when prompted by the wizard
 
 The wizard derives a payment address from the payment verification key and queries Ogmios for the UTXOs of the derived address.
@@ -295,11 +262,11 @@ You must not spend the selected UTXO, because it needs to be consumed later in t
 
 ---
 
-Finally, the wizard outputs the command for obtaining signatures. You use this command in the next step (register-2 wizard). You must run it on a newly prepared machine with the main chain cold signing key.
+Finally, the wizard outputs the command for obtaining signatures, this command will be used as input in the next step (register-2 wizard). We suggest the command to be run on an offline machine, as to not expose the Cardano `cold.skey` to the internet, and return to the online machine to perform the register-3 wizard.
 
 #### Register-2 wizard
 
-The register-2 wizard obtains signatures for the registration message. It only requires the `partner-chain-cli` binary executable to be installed on the 'cold' machine.
+The register-2 wizard obtains signatures for the registration message. It only requires the `partner-chain-cli` binary executable to be installed on the offline machine.
 
 1. Follow the steps when prompted by the wizard
 
@@ -317,12 +284,12 @@ The wizard will give you the option of displaying the registration status. If yo
 
 The start-node wizard is used to start a partner chain node. Make sure that `cardano-node` is running with DB Sync running and fully synced. You will need to provide a link to postgreSQL server running with DB Sync as part of starting the node.
 
-1. Start the wizard: `./partner-chains-cli start-node`.
+1. Start the wizard: `./partner-chains-node wizards start-node`.
 2. The wizard checks if all required keys are present. If not, it reminds you to the run the generate-keys wizard first, and exits.
 3. If the `chain-spec` file is not present, you should obtain it from the governance authority.
-4. The wizard checks the `partner-chains-cli-chain-config.json` file. If it is missing or invalid, you should obtain it from the governance authority.
+4. The wizard checks the `pc-chain-config.json` file. If it is missing or invalid, you should obtain it from the governance authority.
 5. If the `db_sync_postgres_connection_string` is missing from the `partner-chain-cli-resources-config.json` file, the wizard prompts for it using the default value `postgresql://postgres-user:postgres-password@localhost:5432/cexplorer`.
-6. The wizard outputs all relevant parameters and asks if they are correct. If not, you should edit the `partner-chains-cli-chain-config.json` and/or `partner-chain-cli-resources-config.json` files and run the wizard again.
+6. The wizard outputs all relevant parameters and asks if they are correct. If not, you should edit the `pc-chain-config.json` and/or `partner-chain-cli-resources-config.json` files and run the wizard again.
 
 The wizard sets the required environment variables and starts the node.
 
@@ -332,18 +299,17 @@ Registration is effective after 1-2 Cardano epochs. After the waiting period, th
 
 To deregister from the list of block producer candidates, you need to run the deregister wizard.
 
-1. Start the wizard: `./partner-chains-cli deregister`.
-2. The wizard checks the `partner-chains-cli-chain-config.json` file.
+1. Start the wizard: `./partner-chains-node wizards deregister`.
+2. The wizard checks the `pc-chain-config.json` file.
 3. The wizard prompts for the payment verification key file used during registration.
 4. The wizard prompts for the cold verification key matching the cold signing key used during registration.
-5. The wizard prompts for ogmios and kupo addresses.
+5. The wizard prompts for the Ogmios address.
 6. The wizard executes the deregistration command. The change will be effective after two Cardano epochs boundaries.
 
 ---
 **NOTE**
 
-The configuration of the chain is stored in the file `partner-chains-cli-chain-config.json`. This file needs to remain identical with other nodes in the network.
-
+The configuration of the chain is stored in the file `pc-chain-config.json`. This file needs to remain identical with other nodes in the network.
 
 ---
 

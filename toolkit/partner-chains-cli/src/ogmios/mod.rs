@@ -1,10 +1,11 @@
-use crate::IOContext;
+use crate::{IOContext, config::ServiceConfig};
 use anyhow::anyhow;
 use ogmios_client::{
 	jsonrpsee::client_for_url, query_ledger_state::QueryLedgerState, query_network::QueryNetwork,
 	types::OgmiosUtxo,
 };
 use sidechain_domain::NetworkType;
+use std::time::Duration;
 
 pub(crate) mod config;
 
@@ -52,26 +53,17 @@ pub struct ShelleyGenesisConfiguration {
 	pub start_time: u64,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct Utxo {
-	pub tx_id: [u8; 32],
-	pub index: u32,
-	pub value: UtxoValue,
-}
-
-type AssetName = Vec<u8>;
-type PolicyId = [u8; 28];
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct UtxoValue {
-	pub lovelace: u64,
-	pub assets: Vec<(PolicyId, Vec<(AssetName, i128)>)>,
-}
-
-pub fn ogmios_request(addr: &str, req: OgmiosRequest) -> anyhow::Result<OgmiosResponse> {
+pub fn ogmios_request(
+	config: &ServiceConfig,
+	req: OgmiosRequest,
+) -> anyhow::Result<OgmiosResponse> {
 	let tokio_runtime = tokio::runtime::Runtime::new().map_err(|e| anyhow::anyhow!(e))?;
 	tokio_runtime.block_on(async {
-		let client = client_for_url(addr).await.map_err(|e| anyhow::anyhow!(e))?;
+		let client = client_for_url(&config.url(), Duration::from_secs(config.timeout_seconds))
+			.await
+			.map_err(|e| {
+				anyhow::anyhow!("Failed to connect to Ogmios at {} with: {}", config.url(), e)
+			})?;
 		match req {
 			OgmiosRequest::QueryLedgerStateEraSummaries => {
 				let era_summaries = client.era_summaries().await.map_err(|e| anyhow::anyhow!(e))?;
@@ -142,14 +134,16 @@ impl TryFrom<ogmios_client::query_network::ShelleyGenesisConfigurationResponse>
 }
 
 pub(crate) fn get_shelley_config<C: IOContext>(
-	addr: &str,
+	config: &ServiceConfig,
 	context: &C,
 ) -> anyhow::Result<ShelleyGenesisConfiguration> {
-	let response = context.ogmios_rpc(addr, OgmiosRequest::QueryNetworkShelleyGenesis)?;
+	let response = context.ogmios_rpc(config, OgmiosRequest::QueryNetworkShelleyGenesis)?;
 	match response {
-        OgmiosResponse::QueryNetworkShelleyGenesis(shelley_config) => Ok(shelley_config),
-        other => Err(anyhow::anyhow!(format!("Unexpected response from Ogmios when quering for shelley genesis configuration: {other:?}"))),
-    }
+		OgmiosResponse::QueryNetworkShelleyGenesis(shelley_config) => Ok(shelley_config),
+		other => Err(anyhow::anyhow!(format!(
+			"Unexpected response from Ogmios when quering for shelley genesis configuration: {other:?}"
+		))),
+	}
 }
 
 #[cfg(test)]

@@ -7,9 +7,9 @@ Before you begin, some software must be installed.
 ## Order of Operations
 
 1. Install dependencies
-    1. Cardano node v10.1.4
-        1. DB Sync v13.6.0.4 (PostgreSQL v15.3+)
-2. Download the partner chain node v1.4.0
+    1. Cardano node
+        1. DB Sync
+2. Download the partner chain node
 3. Run the generate-keys wizard
 4. Share keys with the chain builder
 5. Obtain the chain configuration and specification files
@@ -24,9 +24,15 @@ This guide is currently aimed at the **preview testnet only**. In most `cardano-
 
 ### 1. Install partner chains dependencies
 
-To run the partner chains stack, several dependencies need to be installed on the Cardano node.
+To run the partner chains stack, Permissioned users need an operational Cardano node setup with DB Sync.
 
-### 1.1 Cardano node v10.1.4
+---
+**NOTE**
+
+Consult the Compatibility matrix on the releases page for dependency version compatibility for a particular release. These change with each [release](https://github.com/input-output-hk/partner-chains/releases).
+---
+
+### 1.1 Cardano node
 
 A passive Cardano node is required to validate a partner chain. The installation of `cardano-node` is out of the scope of this guide. Refer to the [Cardano course handbook](https://cardano-course.gitbook.io/cardano-course/handbook) for documentation and video instruction.
 
@@ -35,6 +41,10 @@ Once your node is synced with the preview testnet, you are ready to continue wit
 ### 1.1.1 DB Sync
 
 The partner chain needs DB Sync on a `cardano-node` to observe Cardano's state.
+
+Cardano DB Sync is configurable in regards to the data it indexes.
+The default configuration works well, if you don't use the default configuration,
+then please read [partner-chains-db-sync-data-sources module header](../../toolkit/data-sources/db-sync/src/lib.rs)
 
 #### A critical note on Cardano DB Sync!
 
@@ -130,7 +140,7 @@ journalctl -fu cardano-dy-sync.service
 ---
 **IMPORTANT NOTE**
 
-Ensure that the node is synced with the network to 100% as well as Kupo and DB Sync before continuing beyond this point. On preview network, it is roughly 24 hours before sync is complete.
+Ensure that the node is synced with the network to 100% as well as DB Sync before continuing beyond this point. On preview network, it is roughly 24 hours before sync is complete.
 
 ---
 
@@ -146,12 +156,12 @@ The generate-keys wizard will generate necessary keys and save them to your node
 
 1. ECDSA cross-chain key
 2. ED25519 Grandpa key
-3. ED25519 Aura key
+3. SR25519 Aura key
 
 If these keys already exist in the node’s keystore, you will be asked to overwrite existing keys. The wizard will also generate a network key for your node if needed.
 
-1. Start the wizard: `./partner-chains-cli generate-keys`
-2. Input the node base path. It is saved in `partner-chains-cli-resources-config.json`.
+1. Start the wizard: `./partner-chains-node wizards generate-keys`
+2. Input the node base path. It is saved in `pc-resources-config.json`.
 
 Now the wizard will output `partner-chains-public-keys.json` containing three keys.
 ``` javascript
@@ -172,25 +182,25 @@ Contact the chain builder and provide the `partner-chains-cli-public-keys.json` 
 
 Obtaining these files is as simple as getting the file from the chain builder.
 
-Contact the chain builder and request the `chain-spec.json` and `partner-chains-cli-chain-config.json` files.
+Contact the chain builder and request the `chain-spec.json` and `pc-chain-config.json` files.
 
 ### 6. Run the partner chain node
 
 The start-node wizard is used to start a partner chain node. Make sure that `cardano-node` is running with DB Sync running and fully synced. You will need to provide a link to postgreSQL server running with DB Sync as part of starting the node.
 
-1. Start the wizard: `./partner-chains-cli start-node`
+1. Start the wizard: `./partner-chains-node start-node`
 2. The wizard checks if all required keys are present. If not, it reminds you to run the generate-keys wizard first, and exits.
 3. If the `chain-spec` file is not present, you should obtain it from the chain builder.
-4. The wizard checks the `partner-chains-cli-chain-config.json` file. If it is missing or invalid, you should obtain it from the chain builder.
+4. The wizard checks the `pc-chain-config.json` file. If it is missing or invalid, you should obtain it from the chain builder.
 5. If the `db_sync_postgres_connection_string` is missing from the `partner-chain-cli-resources-config.json` file, the wizard prompts for it, using the default value `postgresql://postgres-user:postgres-password@localhost:5432/cexplorer`.
-6. The wizard outputs all relevant parameters and asks if they are correct. If not, you should edit the `partner-chains-cli-chain-config.json` and/or `partner-chain-cli-resources-config.json` files and run the wizard again.
+6. The wizard outputs all relevant parameters and asks if they are correct. If not, you should edit the `pc-chain-config.json` and/or `partner-chain-cli-resources-config.json` files and run the wizard again.
 
 The wizard sets the required environment variables and starts the node.
 
 ---
 **NOTE**
 
-The configuration of the chain is stored in the file `partner-chains-cli-chain-config.json`. This file needs to remain idential with other nodes in the network.
+The configuration of the chain is stored in the file `pc-chain-config.json`. This file needs to remain idential with other nodes in the network.
 
 ---
 

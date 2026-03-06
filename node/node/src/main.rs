@@ -1,13 +1,12 @@
 //! Substrate Node Template CLI library.
 #![warn(missing_docs)]
+#![allow(deprecated)]
 
-#[macro_use]
-mod benchmarking;
 mod chain_spec;
 mod cli;
 mod command;
+mod data_sources;
 mod inherent_data;
-mod main_chain_follower;
 mod rpc;
 mod service;
 mod staging;

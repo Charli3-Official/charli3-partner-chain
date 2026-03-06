@@ -1,47 +1,98 @@
+[workspace.package]
+authors = ["IOG"]
+edition = "2024"
+homepage = "https://iohk.io/"
+repository = "https://github.com/input-output-hk/partner-chains.git"
+version = "1.8.1"
+
 [workspace]
 members = [
 	"node/node",
 	"node/runtime",
 	"toolkit/cli/commands",
 	"toolkit/cli/node-commands",
-	"toolkit/cli/smart-contracts-commands",
-	"toolkit/client/consensus/aura",
-	"toolkit/pallets/block-rewards",
-	"toolkit/pallets/pallet-session-runtime-stub",
-	"toolkit/pallets/partner-chains-session",
-	"toolkit/pallets/sidechain",
-	"toolkit/pallets/sidechain/rpc",
-	"toolkit/pallets/session-validator-management",
-	"toolkit/pallets/session-validator-management/benchmarking",
-	"toolkit/pallets/session-validator-management/rpc",
-	"toolkit/primitives/consensus/aura",
-	"toolkit/primitives/block-rewards",
-	"toolkit/primitives/domain",
-	"toolkit/primitives/mock-types",
-	"toolkit/primitives/selection",
-	"toolkit/primitives/sidechain-block-search",
-	"toolkit/primitives/sidechain-slots",
-	"toolkit/primitives/authority-selection-inherents",
-	"toolkit/mainchain-follower/main-chain-follower-cli",
-	"toolkit/mainchain-follower/db-sync-follower",
-	"toolkit/mainchain-follower/mock",
+	"toolkit/smart-contracts/commands",
+	"substrate-extensions/aura/consensus",
+	"toolkit/block-production-log/pallet",
+	"substrate-extensions/partner-chains-session",
+	"toolkit/committee-selection/pallet",
+	"toolkit/committee-selection/rpc",
+	"substrate-extensions/aura/primitives",
+	"toolkit/block-production-log/primitives",
+	"toolkit/sidechain/domain",
+	"toolkit/committee-selection/selection",
+	"toolkit/committee-selection/authority-selection-inherents",
+	"toolkit/data-sources/cli",
+	"toolkit/data-sources/db-sync",
+	"toolkit/data-sources/mock",
 	"toolkit/utils/byte-string-derivation",
 	"toolkit/utils/plutus",
 	"toolkit/utils/plutus/plutus-datum-derive",
 	"toolkit/utils/ogmios-client",
 	"toolkit/utils/time-source",
-	"toolkit/primitives/sidechain-mc-hash",
-	"toolkit/primitives/session-validator-management",
-	"toolkit/primitives/session-validator-management/query",
-	"toolkit/primitives/session-manager",
-	"toolkit/primitives/sidechain",
+	"toolkit/sidechain/sidechain-mc-hash",
+	"toolkit/sidechain/pallet",
+	"toolkit/sidechain/rpc",
+	"toolkit/sidechain/sidechain-block-search",
+	"toolkit/sidechain/sidechain-slots",
+	"toolkit/sidechain/primitives",
+	"toolkit/committee-selection/primitives",
+	"toolkit/committee-selection/query",
 	"toolkit/partner-chains-cli",
-	"toolkit/pallets/native-token-management",
-	"toolkit/primitives/native-token-management",
-	"toolkit/offchain",
-	"toolkit/primitives/plutus-data",
+	"toolkit/smart-contracts/offchain",
+	"toolkit/smart-contracts/plutus-data",
+	"toolkit/address-associations/pallet",
+	"toolkit/block-participation/pallet",
+	"toolkit/block-participation/primitives",
+	"toolkit/block-producer-fees/pallet",
+	"toolkit/block-producer-fees/primitives",
+	"toolkit/block-producer-fees/rpc",
+	"toolkit/block-producer-metadata/pallet",
+	"toolkit/block-producer-metadata/primitives",
+	"toolkit/block-producer-metadata/rpc",
+	"toolkit/utils/db-sync-sqlx",
+	"toolkit/governed-map/primitives",
+	"toolkit/governed-map/pallet",
+	"toolkit/committee-selection/selection-simulator",
+	"toolkit/bridge/pallet",
+	"toolkit/bridge/primitives",
 ]
 resolver = "2"
+
+[workspace.lints.rust]
+suspicious_double_ref_op = { level = "allow", priority = 2 }
+unexpected_cfgs = { level = "warn", check-cfg = [
+	'cfg(build_opt_level, values("3"))',
+	'cfg(build_profile, values("debug", "release"))',
+	'cfg(enable_alloc_error_handler)',
+	'cfg(fuzzing)',
+] }
+
+[workspace.lints.clippy]
+all = { level = "allow", priority = 0 }
+bind_instead_of_map = { level = "allow", priority = 2 }              # stylistic
+borrowed-box = { level = "allow", priority = 2 }                     # Reasonable to fix this one
+complexity = { level = "warn", priority = 1 }
+correctness = { level = "warn", priority = 1 }
+default_constructed_unit_structs = { level = "allow", priority = 2 } # stylistic
+derivable_impls = { level = "allow", priority = 2 }                  # false positives
+eq_op = { level = "allow", priority = 2 }                            # In tests we test equality.
+erasing_op = { level = "allow", priority = 2 }                       # E.g. 0 * DOLLARS
+extra-unused-type-parameters = { level = "allow", priority = 2 }     # stylistic
+identity-op = { level = "allow", priority = 2 }                      # One case where we do 0 +
+if-same-then-else = { level = "allow", priority = 2 }
+needless-lifetimes = { level = "allow", priority = 2 }               # generated code
+needless_option_as_deref = { level = "allow", priority = 2 }         # false positives
+nonminimal-bool = { level = "allow", priority = 2 }                  # maybe
+option-map-unit-fn = { level = "allow", priority = 2 }               # stylistic
+stable_sort_primitive = { level = "allow", priority = 2 }            # prefer stable sort
+too-many-arguments = { level = "allow", priority = 2 }               # (Turning this on would lead to)
+type_complexity = { level = "allow", priority = 2 }
+unit_arg = { level = "allow", priority = 2 }                         # stylistic
+unnecessary_cast = { level = "allow", priority = 2 }                 # Types may change
+useless_conversion = { level = "allow", priority = 2 }               # Types may change
+while_immutable_condition = { level = "allow", priority = 2 }        # false positives
+zero-prefixed-literal = { level = "allow", priority = 2 }            # 00_1000_000
 
 [profile.release]
 panic = "unwind"
@@ -60,62 +111,84 @@ codegen-units = 1
 anyhow = "1.0.81"
 async-trait = "0.1"
 assert_cmd = "2.0.14"
-cardano-serialization-lib = { default-features = false, version = "13.2.0" }
+cardano-serialization-lib = { default-features = false, version = "14.1.2" }
 cbor_event = { version = "2.4.0" }
-clap = { version = "4.5.10", features = ["derive"] }
+colored = { version = "3.0.0" }
+clap = { version = "4.5", features = ["derive"] }
 ed25519-zebra = { version = "4.0.3" }
 ed25519 = { version = "2.2.2" }
 figment = { version = "0.10.19", features = ["env", "test"] }
 fraction = { version = "0.15.3", default-features = false }
 futures = { version = "0.3.30", features = ["thread-pool"] }
 hex = { version = "0.4.3", features = ["alloc"], default-features = false }
-hex-literal = "0.4.1"
-itertools = "0.13.0"
-jsonrpsee = { version = "0.24.3", features = ["client-core", "server", "macros" ] }
-libp2p-identity = "0.2.9"
-log = { version = "0.4.22", default-features = false }
-minicbor = { version = "0.20", features = ["alloc"] }
+hex-literal = "1.0.0"
+itertools = "0.14.0"
+jsonrpsee = { version = "0.24", features = ["client-core", "server", "macros"] }
+libp2p-identity = "0.2"
+log = { version = "0.4", default-features = false }
+minicbor = { version = "0.25.1", features = ["alloc"] }
 num-bigint = { version = "0.4.3", default-features = false }
 num-traits = { version = "0.2.17", default-features = false }
-parity-scale-codec = { package = "parity-scale-codec", version = "3.6.12", default-features = false, features = ["derive", "max-encoded-len"] }
+parity-scale-codec = { package = "parity-scale-codec", version = "3.7.5", default-features = false, features = [
+	"derive",
+	"max-encoded-len",
+] }
 quickcheck = { version = "1.0.3" }
-pallas-addresses = { version = "0.32.1" }
-pallas-codec = { version = "0.32.1" }
 pallas-primitives = { version = "0.32.1" }
-proptest = { version = "1.5.0" }
-scale-info = { version = "2.11.1", default-features = false, features = ["derive"] }
-testcontainers = { version = "0.15.0" }
+proptest = { version = "1.7.0" }
+scale-info = { version = "2.11.1", default-features = false, features = [
+	"derive",
+] }
+testcontainers = { version = "0.25.0" }
 quickcheck_macros = { version = "1" }
 quote = "1.0"
-rand_chacha = { version = "0.3.1", default-features = false }
-rand = { version = "0.8.5", default-features = false }
+rand_chacha = { version = "0.9.0", default-features = false }
+rand = { version = "0.9.1", default-features = false }
 tokio-retry = { version = "0.3" }
-secp256k1 = { version = "0.28.2", default-features = false }
-serde = { version = "1.0.209", default-features = false, features = ["derive", "alloc"] }
-serde_json = { version = '1.0.132', default-features = false, features = ["alloc"] }
-syn = "2.0.65"
+secp256k1 = { version = "0.30.0", default-features = false }
+k256 = { version = "0.13.4", default-features = false }
+serde = { version = "1.0.209", default-features = false, features = [
+	"derive",
+	"alloc",
+] }
+serde_json = { version = '1.0.132', default-features = false, features = [
+	"alloc",
+] }
+syn = "2.0"
 tempfile = "3.10.1"
 thiserror = { version = "2.0", default-features = false }
 time = { version = "0.3.36", default-features = false }
-tokio = { version = "1.0", features = ["rt-multi-thread", "macros"] }
-uplc = "=1.1.6"
-lru = { version = "0.12.4" }
+tokio = { version = "1.46", features = ["rt-multi-thread", "macros"] }
+uplc = { version = "1.1.6" }
+lru = { version = "0.16.0" }
 pretty_assertions = { version = "1.4.1" }
-derive_more = { version = "0.99.18" }
+derive_more = { version = "2.0.1", default-features = false }
 num-derive = { version = "0.4.2" }
-env_logger = { version = "0.11.2" }
-bigdecimal = { version = "0.4.3" }
+env_logger = { version = "0.11.8" }
+bigdecimal = { version = "0.4.8" }
 blake2b_simd = { version = "1.0.2", default-features = false }
 sealed_test = { version = "1.0.0" }
 derive-new = { version = "0.7.0" }
 inquire = { version = "0.7.5" }
-parking_lot = { version = "0.12.3", default-features = false }
+parking_lot = { version = "0.12.4", default-features = false }
 envy = { version = "0.4.2" }
 log4rs = { version = "1.3.0" }
+bech32 = { version = "0.11.0", default-features = false }
+sqlx = { version = "0.8.6", default-features = false, features = [
+	"runtime-tokio-rustls",
+	"postgres",
+	"macros",
+	"chrono",
+	"migrate",
+	"bigdecimal",
+] }
+derive-where = { version = "1.2.7", default-features = false }
+once_cell = { version = "1.21.3", default-features = false }
+paste = { version = "1.0.15" }
+fork-tree = { version = "13.0.1" }
 
 # substrate dependencies
 frame-benchmarking = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
-frame-benchmarking-cli = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 frame-executive = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 frame-support = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 frame-system = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
@@ -154,6 +227,7 @@ sc-transaction-pool = { default-features = false, git = "https://github.com/pari
 sc-transaction-pool-api = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 sc-offchain = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 sp-api = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
+sp-arithmetic = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 sp-application-crypto = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 sp-block-builder = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 sp-blockchain = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
@@ -185,44 +259,81 @@ substrate-prometheus-endpoint = { package = "substrate-prometheus-endpoint", git
 substrate-test-runtime-client = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 substrate-wasm-builder = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2509" }
 
-raw-scripts = { git = "https://github.com/input-output-hk/partner-chains-smart-contracts.git", tag = "v7.0.2" }
+raw-scripts = { git = "https://github.com/input-output-hk/partner-chains-smart-contracts.git", tag = "v8.1.0" }
 
 # local dependencies
-sidechain-runtime = { path = "node/runtime" }
-pallet-block-rewards = { path = "toolkit/pallets/block-rewards", default-features = false }
-pallet-sidechain = { path = "toolkit/pallets/sidechain", default-features = false }
-pallet-sidechain-rpc = { path = "toolkit/pallets/sidechain/rpc", default-features = false }
-sp-session-validator-management = { default-features = false, path = "toolkit/primitives/session-validator-management" }
-sp-session-validator-management-query = { default-features = false, path = "toolkit/primitives/session-validator-management/query" }
-pallet-session-validator-management = { default-features = false, path = "toolkit/pallets/session-validator-management" }
-pallet-session-validator-management-benchmarking = { default-features = false, path = "toolkit/pallets/session-validator-management/benchmarking" }
-pallet-session-validator-management-rpc = { path = "toolkit/pallets/session-validator-management/rpc" }
-ogmios-client = { path = "toolkit/utils/ogmios-client", default-features = false }
-sp-block-rewards = { path = "toolkit/primitives/block-rewards", default-features = false }
-selection = { path = "toolkit/primitives/selection", default-features = false }
-sidechain-domain = { path = "toolkit/primitives/domain", default-features = false }
-sidechain-block-search = { path = "toolkit/primitives/sidechain-block-search", default-features = false }
-db-sync-follower = { path = "toolkit/mainchain-follower/db-sync-follower" }
-main-chain-follower-mock = { path = "toolkit/mainchain-follower/mock", default-features = false }
+
+# utils
 plutus = { path = "toolkit/utils/plutus", default-features = false }
 plutus-datum-derive = { default-features = false, path = "toolkit/utils/plutus/plutus-datum-derive" }
 byte-string-derive = { default-features = false, path = "toolkit/utils/byte-string-derivation" }
-sidechain-slots = { path = "toolkit/primitives/sidechain-slots", default-features = false }
-mock-types = { path = "toolkit/primitives/mock-types", default-features = false }
+ogmios-client = { path = "toolkit/utils/ogmios-client", default-features = false }
+time-source = { path = "toolkit/utils/time-source" }
+db-sync-sqlx = { path = "toolkit/utils/db-sync-sqlx" }
+
+# smart contracts
+partner-chains-plutus-data = { path = "toolkit/smart-contracts/plutus-data", default-features = false }
+partner-chains-cardano-offchain = { path = "toolkit/smart-contracts/offchain", default-features = false }
+partner-chains-smart-contracts-commands = { path = "toolkit/smart-contracts/commands", default-features = false }
+
 cli-commands = { path = "toolkit/cli/commands" }
 partner-chains-node-commands = { path = "toolkit/cli/node-commands" }
-time-source = { path = "toolkit/utils/time-source" }
-sidechain-mc-hash = { path = "toolkit/primitives/sidechain-mc-hash", default-features = false }
-authority-selection-inherents = { path = "toolkit/primitives/authority-selection-inherents", default-features = false }
-session-manager = { path = "toolkit/primitives/session-manager", default-features = false }
-sp-sidechain = { path = "toolkit/primitives/sidechain", default-features = false }
-pallet-native-token-management = { path = "toolkit/pallets/native-token-management", default-features = false }
-sp-native-token-management = { path = "toolkit/primitives/native-token-management", default-features = false }
-sc-partner-chains-consensus-aura = { path = "toolkit/client/consensus/aura", default-features = false }
-sp-partner-chains-consensus-aura = { path = "toolkit/primitives/consensus/aura", default-features = false }
-pallet-partner-chains-session = { path = "toolkit/pallets/partner-chains-session", default-features = false }
-pallet-session-runtime-stub = { path = "toolkit/pallets/pallet-session-runtime-stub", default-features = false }
-partner-chains-cardano-offchain = { path = "toolkit/offchain", default-features = false }
-partner-chains-plutus-data = { path = "toolkit/primitives/plutus-data", default-features = false }
-partner-chains-smart-contracts-commands = { path = "toolkit/cli/smart-contracts-commands", default-features = false }
+partner-chains-cli = { path = "toolkit/partner-chains-cli", default-features = false }
+
+pallet-address-associations = { path = "toolkit/address-associations/pallet", default-features = false }
+
+# sidechain core
+sidechain-domain = { path = "toolkit/sidechain/domain", default-features = false }
+sidechain-block-search = { path = "toolkit/sidechain/sidechain-block-search", default-features = false }
+sidechain-slots = { path = "toolkit/sidechain/sidechain-slots", default-features = false }
+sidechain-mc-hash = { path = "toolkit/sidechain/sidechain-mc-hash", default-features = false }
+sp-sidechain = { path = "toolkit/sidechain/primitives", default-features = false }
+pallet-sidechain = { path = "toolkit/sidechain/pallet", default-features = false }
+pallet-sidechain-rpc = { path = "toolkit/sidechain/rpc", default-features = false }
+
+# committee selection
+selection = { path = "toolkit/committee-selection/selection", default-features = false }
+sp-session-validator-management = { default-features = false, path = "toolkit/committee-selection/primitives" }
+sp-session-validator-management-query = { default-features = false, path = "toolkit/committee-selection/query" }
+pallet-session-validator-management = { default-features = false, path = "toolkit/committee-selection/pallet" }
+pallet-session-validator-management-rpc = { path = "toolkit/committee-selection/rpc" }
+authority-selection-inherents = { path = "toolkit/committee-selection/authority-selection-inherents", default-features = false }
+
+# substrate extensions
+sc-partner-chains-consensus-aura = { path = "substrate-extensions/aura/consensus", default-features = false }
+sp-partner-chains-consensus-aura = { path = "substrate-extensions/aura/primitives", default-features = false }
+pallet-partner-chains-session = { path = "substrate-extensions/partner-chains-session", default-features = false }
+
+# block production and rewards
+pallet-block-production-log = { path = "toolkit/block-production-log/pallet", default-features = false }
+sp-block-production-log = { path = "toolkit/block-production-log/primitives", default-features = false }
+pallet-block-participation = { path = "toolkit/block-participation/pallet", default-features = false }
+sp-block-participation = { path = "toolkit/block-participation/primitives", default-features = false }
+
+# block producer fees
+pallet-block-producer-fees = { path = "toolkit/block-producer-fees/pallet", default-features = false }
+pallet-block-producer-fees-rpc = { path = "toolkit/block-producer-fees/rpc", default-features = false }
+sp-block-producer-fees = { path = "toolkit/block-producer-fees/primitives", default-features = false }
+
+# block producer metadata
+pallet-block-producer-metadata = { path = "toolkit/block-producer-metadata/pallet", default-features = false }
+pallet-block-producer-metadata-rpc = { path = "toolkit/block-producer-metadata/rpc", default-features = false }
+sp-block-producer-metadata = { path = "toolkit/block-producer-metadata/primitives", default-features = false }
+
+# Data Sources
+partner-chains-db-sync-data-sources = { path = "toolkit/data-sources/db-sync" }
+partner-chains-mock-data-sources = { path = "toolkit/data-sources/mock", default-features = false }
+
+# Governed Map
+sp-governed-map = { path = "toolkit/governed-map/primitives", default-features = false }
+pallet-governed-map = { path = "toolkit/governed-map/pallet", default-features = false }
+
+# Bridge
+sp-partner-chains-bridge = { path = "toolkit/bridge/primitives", default-features = false }
+pallet-partner-chains-bridge = { path = "toolkit/bridge/pallet", default-features = false }
+
+# Charli3 Oracle pallet
 charli3-oracle-core = { git = "https://github.com/Charli3-Official/charli3-substrate-oracle-core.git", branch = "main", default-features = false, features = ["pallet"] }
+
+# blockchain node
+partner-chains-runtime = { path = "node/runtime" }
