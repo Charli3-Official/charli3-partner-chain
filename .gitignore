@@ -46,8 +46,9 @@ dev/local-environment-dynamic/runtime-values/*
 dev/local-environment-dynamic/configurations/partner-chains-nodes/*
 
 ogmios_client.log
-# *.key
-# *.json
+*.key
+*.json
+data/
 
 # e2e tests (Python)
 venv
